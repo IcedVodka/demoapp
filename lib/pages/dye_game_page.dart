@@ -12,11 +12,6 @@ import '../utils/color_utils.dart';
 import '../widgets/calculation_panel.dart';
 import '../widgets/number_grid.dart';
 
-enum _LockPanelView {
-  locked,
-  calculation,
-}
-
 class DyeGamePage extends StatefulWidget {
   const DyeGamePage({super.key});
 
@@ -54,7 +49,7 @@ class _DyeGamePageState extends State<DyeGamePage> {
   int? _fixedCol;
   List<DiffMarker> _diffMarkers = const [];
   int _lockSequence = 0;
-  _LockPanelView _lockPanelView = _LockPanelView.locked;
+  int _pageIndex = 0;
 
   @override
   void initState() {
@@ -1129,48 +1124,6 @@ class _DyeGamePageState extends State<DyeGamePage> {
               ],
             ),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _randomizeAll,
-                    icon: const Icon(Icons.casino, size: 16),
-                    label: const Text('全体随机'),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 10,
-                      ),
-                      textStyle: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _shiftUpAll,
-                    icon: const Icon(Icons.arrow_upward, size: 16),
-                    label: const Text('上移一行'),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 10,
-                      ),
-                      textStyle: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
             Text('染色阈值', style: theme.textTheme.titleMedium),
             const SizedBox(height: 6),
             Row(
@@ -1207,6 +1160,80 @@ class _DyeGamePageState extends State<DyeGamePage> {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '锁定展示',
+                        style: theme.textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 8),
+                      _buildLockDisplayGrid(),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: _randomizeAll,
+                        icon: const Icon(Icons.casino, size: 16),
+                        label: const Text('全体随机'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 12,
+                          ),
+                          textStyle: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: _shiftUpAll,
+                        icon: const Icon(Icons.arrow_upward, size: 16),
+                        label: const Text('上移一行'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 12,
+                          ),
+                          textStyle: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: _clearAllLocks,
+                        icon: const Icon(Icons.lock_open, size: 16),
+                        label: const Text('清空锁定'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 12,
+                          ),
+                          textStyle: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -1353,75 +1380,80 @@ class _DyeGamePageState extends State<DyeGamePage> {
     );
   }
 
-  Widget _buildLockPanel() {
-    final theme = Theme.of(context);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.94),
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x14000000),
-            blurRadius: 14,
-            offset: Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+  Widget _buildConfigPage() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isWide = constraints.maxWidth >= 900;
+          final gridSection = _buildGridSection(
+            constraints.maxWidth,
+          );
+          final configSection = ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: _buildConfigPanel(),
+          );
+          if (isWide) {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _iconOptionButton(
-                  selected: _lockPanelView == _LockPanelView.locked,
-                  onTap: () => setState(() {
-                    _lockPanelView = _LockPanelView.locked;
-                  }),
-                  icon: Icons.lock,
-                  label: '锁定展示',
-                ),
-                const SizedBox(width: 8),
-                _iconOptionButton(
-                  selected: _lockPanelView == _LockPanelView.calculation,
-                  onTap: () => setState(() {
-                    _lockPanelView = _LockPanelView.calculation;
-                  }),
-                  icon: Icons.functions,
-                  label: '计算',
+                Expanded(child: gridSection),
+                const SizedBox(width: 24),
+                configSection,
+              ],
+            );
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              gridSection,
+              const SizedBox(height: 24),
+              configSection,
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildCalculationPage() {
+    final theme = Theme.of(context);
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.94),
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x14000000),
+                  blurRadius: 14,
+                  offset: Offset(0, 8),
                 ),
               ],
             ),
-            const SizedBox(height: 10),
-            if (_lockPanelView == _LockPanelView.locked)
-              Column(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: _clearAllLocks,
-                      icon: const Icon(Icons.lock_open, size: 16),
-                      label: const Text('一键清空锁定'),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        textStyle: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+                  Text(
+                    '计算',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  _buildLockDisplayGrid(),
+                  const SizedBox(height: 12),
+                  CalculationPanel(
+                    baseCombinationsBuilder: _calculateBaseCombinations,
+                  ),
                 ],
-              )
-            else
-              CalculationPanel(
-                baseCombinationsBuilder: _calculateBaseCombinations,
               ),
-          ],
+            ),
+          ),
         ),
       ),
     );
@@ -1470,46 +1502,32 @@ class _DyeGamePageState extends State<DyeGamePage> {
             ),
           ),
           SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final isWide = constraints.maxWidth >= 900;
-                  final gridSection = _buildGridSection(
-                    constraints.maxWidth,
-                  );
-                  final configSection = ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 420),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _buildConfigPanel(),
-                        const SizedBox(height: 16),
-                        _buildLockPanel(),
-                      ],
-                    ),
-                  );
-                  if (isWide) {
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(child: gridSection),
-                        const SizedBox(width: 24),
-                        configSection,
-                      ],
-                    );
-                  }
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      gridSection,
-                      const SizedBox(height: 24),
-                      configSection,
-                    ],
-                  );
-                },
-              ),
+            child: IndexedStack(
+              index: _pageIndex,
+              children: [
+                _buildConfigPage(),
+                _buildCalculationPage(),
+              ],
             ),
+          ),
+        ],
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _pageIndex,
+        onDestinationSelected: (index) {
+          setState(() {
+            _pageIndex = index;
+          });
+        },
+        backgroundColor: Colors.white.withOpacity(0.92),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.tune),
+            label: '配置',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.calculate),
+            label: '计算',
           ),
         ],
       ),
