@@ -36,9 +36,10 @@ class NumberCell extends StatelessWidget {
                   child: LayoutBuilder(
                     builder: (context, constraints) {
                       final fontSize = constraints.maxWidth * 0.42;
+                      final label = cell.value?.toString() ?? '';
                       return Center(
                         child: Text(
-                          cell.value.toString(),
+                          label,
                           style: TextStyle(
                             fontSize: fontSize,
                             fontWeight: FontWeight.w700,

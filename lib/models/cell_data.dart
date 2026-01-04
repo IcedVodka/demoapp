@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class CellData {
-  int value;
+  int? value;
   List<Color> colors;
   bool locked;
 

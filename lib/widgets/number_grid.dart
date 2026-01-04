@@ -36,13 +36,17 @@ class NumberGrid extends StatelessWidget {
         );
         if (col != cells[row].length - 1) {
           rowChildren.add(
-            SizedBox(width: col == 2 ? majorGap : minorGap),
+            SizedBox(
+              width: (col + 1) % 3 == 0 ? majorGap : minorGap,
+            ),
           );
         }
       }
       rows.add(Expanded(child: Row(children: rowChildren)));
       if (row != cells.length - 1) {
-        rows.add(SizedBox(height: row == 2 ? majorGap : minorGap));
+        rows.add(
+          SizedBox(height: (row + 1) % 3 == 0 ? majorGap : minorGap),
+        );
       }
     }
     return Column(children: rows);

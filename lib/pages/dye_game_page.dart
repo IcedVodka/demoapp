@@ -1,9 +1,11 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/cell_data.dart';
-import '../models/color_option.dart';
 import '../models/compare_mode.dart';
 import '../utils/color_utils.dart';
 import '../widgets/number_grid.dart';
@@ -16,11 +18,12 @@ class DyeGamePage extends StatefulWidget {
 }
 
 class _DyeGamePageState extends State<DyeGamePage> {
-  static const int _gridSize = 6;
+  static const int _gridSize = 9;
   static const double _minorGap = 6;
   static const double _majorGap = 14;
   static const double _cellRadius = 12;
   static const Color _baseColor = kBaseCellColor;
+  static const String _storageKey = 'dye_game_state_v2';
   Color _hitColor = const Color(0xFFE53935);
   Color _missColor = const Color(0xFF1E88E5);
 
@@ -29,7 +32,7 @@ class _DyeGamePageState extends State<DyeGamePage> {
     (_) => List.generate(
       _gridSize,
       (_) => CellData(
-        value: 0,
+        value: null,
         colors: List<Color>.filled(4, _baseColor),
       ),
     ),
@@ -38,66 +41,179 @@ class _DyeGamePageState extends State<DyeGamePage> {
   CompareMode _mode = CompareMode.horizontal;
   int _threshold = 2;
 
-  void _applyColoring() {
+  @override
+  void initState() {
+    super.initState();
+    _loadState();
+  }
+
+  Future<void> _loadState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_storageKey);
+    if (raw == null) return;
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map<String, dynamic>) return;
+    final cellsData = decoded['cells'];
+    if (cellsData is! List || cellsData.length != _gridSize) return;
+
+    final parsed = <List<CellData>>[];
+    for (final rowData in cellsData) {
+      if (rowData is! List || rowData.length != _gridSize) return;
+      final row = <CellData>[];
+      for (final cellData in rowData) {
+        if (cellData is! Map<String, dynamic>) return;
+        final colorsData = cellData['colors'];
+        if (colorsData is! List || colorsData.length != 4) return;
+        final colors = <Color>[];
+        for (final colorValue in colorsData) {
+          if (colorValue is num) {
+            colors.add(Color(colorValue.toInt()));
+          } else {
+            colors.add(_baseColor);
+          }
+        }
+        final value = cellData['value'];
+        row.add(
+          CellData(
+            value: value is num ? value.toInt() : null,
+            colors: colors,
+            locked: cellData['locked'] == true,
+          ),
+        );
+      }
+      parsed.add(row);
+    }
+
+    if (!mounted) return;
     setState(() {
+      final modeName = decoded['mode'];
+      if (modeName is String) {
+        _mode = CompareMode.values.firstWhere(
+          (mode) => mode.name == modeName,
+          orElse: () => _mode,
+        );
+      }
+      final thresholdValue = decoded['threshold'];
+      if (thresholdValue is num) {
+        _threshold = thresholdValue.round().clamp(0, 5).toInt();
+      }
       for (int row = 0; row < _gridSize; row++) {
         for (int col = 0; col < _gridSize; col++) {
-          final cell = _cells[row][col];
-          if (cell.locked) continue;
-          cell.colors = List<Color>.filled(4, _baseColor);
+          final source = parsed[row][col];
+          final target = _cells[row][col];
+          target.value = source.value;
+          target.colors = List<Color>.from(source.colors);
+          target.locked = source.locked;
         }
       }
-      switch (_mode) {
-        case CompareMode.horizontal:
-          for (int row = 0; row < _gridSize; row++) {
-            for (int col = 0; col < _gridSize - 1; col++) {
-              final color = _pairColor(
-                _cells[row][col].value,
-                _cells[row][col + 1].value,
-              );
-              _setRightHalf(row, col, color);
-              _setLeftHalf(row, col + 1, color);
-            }
-          }
-          break;
-        case CompareMode.vertical:
-          for (int row = 0; row < _gridSize - 1; row++) {
-            for (int col = 0; col < _gridSize; col++) {
-              final color = _pairColor(
-                _cells[row][col].value,
-                _cells[row + 1][col].value,
-              );
-              _setBottomHalf(row, col, color);
-              _setTopHalf(row + 1, col, color);
-            }
-          }
-          break;
-        case CompareMode.diagonalDownRight:
-          for (int row = 0; row < _gridSize - 1; row++) {
-            for (int col = 0; col < _gridSize - 1; col++) {
-              final color = _pairColor(
-                _cells[row][col].value,
-                _cells[row + 1][col + 1].value,
-              );
-              _setBottomRight(row, col, color);
-              _setTopLeft(row + 1, col + 1, color);
-            }
-          }
-          break;
-        case CompareMode.diagonalDownLeft:
-          for (int row = 0; row < _gridSize - 1; row++) {
-            for (int col = 1; col < _gridSize; col++) {
-              final color = _pairColor(
-                _cells[row][col].value,
-                _cells[row + 1][col - 1].value,
-              );
-              _setBottomLeft(row, col, color);
-              _setTopRight(row + 1, col - 1, color);
-            }
-          }
-          break;
-      }
     });
+  }
+
+  Future<void> _saveState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final data = {
+      'mode': _mode.name,
+      'threshold': _threshold,
+      'cells': _cells
+          .map(
+            (row) => row
+                .map(
+                  (cell) => {
+                    'value': cell.value,
+                    'locked': cell.locked,
+                    'colors': cell.colors.map((color) => color.value).toList(),
+                  },
+                )
+                .toList(),
+          )
+          .toList(),
+    };
+    await prefs.setString(_storageKey, jsonEncode(data));
+  }
+
+  void _applyColoring() {
+    for (int row = 0; row < _gridSize; row++) {
+      for (int col = 0; col < _gridSize; col++) {
+        final cell = _cells[row][col];
+        if (cell.locked) continue;
+        cell.colors = List<Color>.filled(4, _baseColor);
+      }
+    }
+    switch (_mode) {
+      case CompareMode.horizontal:
+        for (int row = 0; row < _gridSize; row++) {
+          for (int col = 0; col < _gridSize - 1; col++) {
+            final color = _pairColor(
+              _cells[row][col].value,
+              _cells[row][col + 1].value,
+            );
+            if (color == null) continue;
+            _setRightHalf(row, col, color);
+            _setLeftHalf(row, col + 1, color);
+          }
+        }
+        break;
+      case CompareMode.vertical:
+        for (int row = 0; row < _gridSize - 1; row++) {
+          for (int col = 0; col < _gridSize; col++) {
+            final color = _pairColor(
+              _cells[row][col].value,
+              _cells[row + 1][col].value,
+            );
+            if (color == null) continue;
+            _setBottomHalf(row, col, color);
+            _setTopHalf(row + 1, col, color);
+          }
+        }
+        break;
+      case CompareMode.diagonalDownRight:
+        for (int row = 0; row < _gridSize - 1; row++) {
+          for (int col = 0; col < _gridSize - 1; col++) {
+            final color = _pairColor(
+              _cells[row][col].value,
+              _cells[row + 1][col + 1].value,
+            );
+            if (color == null) continue;
+            _setBottomRight(row, col, color);
+            _setTopLeft(row + 1, col + 1, color);
+          }
+        }
+        break;
+      case CompareMode.diagonalDownLeft:
+        for (int row = 0; row < _gridSize - 1; row++) {
+          for (int col = 1; col < _gridSize; col++) {
+            final color = _pairColor(
+              _cells[row][col].value,
+              _cells[row + 1][col - 1].value,
+            );
+            if (color == null) continue;
+            _setBottomLeft(row, col, color);
+            _setTopRight(row + 1, col - 1, color);
+          }
+        }
+        break;
+    }
+  }
+
+  void _recolor() {
+    setState(_applyColoring);
+    unawaited(_saveState());
+  }
+
+  void _updateMode(CompareMode mode) {
+    setState(() {
+      _mode = mode;
+      _applyColoring();
+    });
+    unawaited(_saveState());
+  }
+
+  void _updateThreshold(int value) {
+    setState(() {
+      _threshold = value;
+      _applyColoring();
+    });
+    unawaited(_saveState());
   }
 
   void _randomizeAll() {
@@ -110,21 +226,45 @@ class _DyeGamePageState extends State<DyeGamePage> {
         }
       }
     });
+    unawaited(_saveState());
   }
 
-  void _clearAll() {
+  void _shiftUpAll() {
     setState(() {
-      for (final row in _cells) {
-        for (final cell in row) {
-          if (cell.locked) continue;
-          cell.value = 0;
-          cell.colors = List<Color>.filled(4, _baseColor);
+      final snapshot = _cells
+          .map(
+            (row) => row
+                .map(
+                  (cell) => CellData(
+                    value: cell.value,
+                    colors: List<Color>.from(cell.colors),
+                    locked: cell.locked,
+                  ),
+                )
+                .toList(),
+          )
+          .toList();
+      for (int row = 0; row < _gridSize - 1; row++) {
+        for (int col = 0; col < _gridSize; col++) {
+          final source = snapshot[row + 1][col];
+          final target = _cells[row][col];
+          target.value = source.value;
+          target.colors = List<Color>.from(source.colors);
+          target.locked = source.locked;
         }
       }
+      for (int col = 0; col < _gridSize; col++) {
+        final cell = _cells[_gridSize - 1][col];
+        cell.value = null;
+        cell.locked = false;
+        cell.colors = List<Color>.filled(4, _baseColor);
+      }
     });
+    unawaited(_saveState());
   }
 
-  Color _pairColor(int a, int b) {
+  Color? _pairColor(int? a, int? b) {
+    if (a == null || b == null) return null;
     final diff = _digitDiff(a, b);
     return diff <= _threshold ? _hitColor : _missColor;
   }
@@ -188,25 +328,39 @@ class _DyeGamePageState extends State<DyeGamePage> {
 
   Future<void> _editCell(int row, int col) async {
     final cell = _cells[row][col];
-    int value = cell.value;
+    int? value = cell.value;
     bool locked = cell.locked;
-    final colors = List<Color>.from(cell.colors);
+    List<Color> colors = List<Color>.from(cell.colors);
 
-    final saved = await showDialog<bool>(
+    await showDialog<void>(
       context: context,
+      barrierDismissible: true,
       builder: (context) {
         return AlertDialog(
           title: Text('编辑格子（${row + 1}, ${col + 1}）'),
           content: StatefulBuilder(
             builder: (context, setInnerState) {
-              Future<void> pickColor(int index) async {
-                final picked = await _showColorPicker(
-                  context,
-                  colors[index],
-                );
-                if (picked != null) {
-                  setInnerState(() => colors[index] = picked);
-                }
+              void updateValue(int? nextValue) {
+                setInnerState(() => value = nextValue);
+                setState(() => cell.value = nextValue);
+                unawaited(_saveState());
+              }
+
+              void updateColors(Color nextColor) {
+                final nextColors = List<Color>.filled(4, nextColor);
+                setInnerState(() => colors = nextColors);
+                setState(() => cell.colors = List<Color>.from(nextColors));
+                unawaited(_saveState());
+              }
+
+              void updateLocked(bool nextValue) {
+                setInnerState(() => locked = nextValue);
+                setState(() => cell.locked = nextValue);
+                unawaited(_saveState());
+              }
+
+              bool isColorSelected(Color color) {
+                return colors.every((item) => item.value == color.value);
               }
 
               return SizedBox(
@@ -215,45 +369,95 @@ class _DyeGamePageState extends State<DyeGamePage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
+                      const Text('数字'),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
                         children: [
-                          const Text('数字'),
-                          const SizedBox(width: 12),
-                          DropdownButton<int>(
-                            value: value,
-                            items: List.generate(
-                              10,
-                              (index) => DropdownMenuItem(
-                                value: index,
-                                child: Text(index.toString()),
-                              ),
+                          _optionButton(
+                            selected: value == null,
+                            onTap: () => updateValue(null),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
                             ),
-                            onChanged: (newValue) {
-                              if (newValue == null) return;
-                              setInnerState(() => value = newValue);
-                            },
+                            child: const Text('空'),
+                          ),
+                          ...List.generate(
+                            10,
+                            (index) => _optionButton(
+                              selected: value == index,
+                              onTap: () => updateValue(index),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              child: Text(index.toString()),
+                            ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 12),
-                      const Text('四分颜色'),
+                      const SizedBox(height: 16),
+                      const Text('颜色'),
                       const SizedBox(height: 8),
-                      _colorRow('左上', colors[0], () => pickColor(0)),
-                      const SizedBox(height: 8),
-                      _colorRow('右上', colors[1], () => pickColor(1)),
-                      const SizedBox(height: 8),
-                      _colorRow('左下', colors[2], () => pickColor(2)),
-                      const SizedBox(height: 8),
-                      _colorRow('右下', colors[3], () => pickColor(3)),
-                      const SizedBox(height: 8),
-                      SwitchListTile(
-                        value: locked,
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('锁定此格'),
-                        subtitle: const Text('锁定后不参与染色与批量操作'),
-                        onChanged: (newValue) {
-                          setInnerState(() => locked = newValue);
-                        },
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _optionButton(
+                            selected: isColorSelected(_hitColor),
+                            onTap: () => updateColors(_hitColor),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _colorIcon(_hitColor),
+                                const SizedBox(width: 6),
+                                const Text('红'),
+                              ],
+                            ),
+                          ),
+                          _optionButton(
+                            selected: isColorSelected(_missColor),
+                            onTap: () => updateColors(_missColor),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _colorIcon(_missColor),
+                                const SizedBox(width: 6),
+                                const Text('蓝'),
+                              ],
+                            ),
+                          ),
+                          _optionButton(
+                            selected: isColorSelected(_baseColor),
+                            onTap: () => updateColors(_baseColor),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _colorIcon(_baseColor, showClear: true),
+                                const SizedBox(width: 6),
+                                const Text('清空'),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      _optionButton(
+                        selected: locked,
+                        onTap: () => updateLocked(!locked),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              locked ? Icons.lock : Icons.lock_open,
+                              size: 16,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(locked ? '已锁定' : '未锁定'),
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -261,157 +465,102 @@ class _DyeGamePageState extends State<DyeGamePage> {
               );
             },
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('取消'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('保存'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (saved == true) {
-      setState(() {
-        cell.value = value;
-        cell.locked = locked;
-        cell.colors = colors;
-      });
-    }
-  }
-
-  Future<Color?> _showColorPicker(BuildContext context, Color current) {
-    return showModalBottomSheet<Color>(
-      context: context,
-      useRootNavigator: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (context) {
-        return SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: kColorOptions.map((option) {
-                final selected = option.color.value == current.value;
-                return InkWell(
-                  onTap: () => Navigator.pop(context, option.color),
-                  borderRadius: BorderRadius.circular(12),
-                  child: Container(
-                    width: 72,
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: selected ? Colors.black87 : Colors.black12,
-                        width: selected ? 2 : 1,
-                      ),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 36,
-                          height: 36,
-                          decoration: BoxDecoration(
-                            color: option.color,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.black12),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          option.name,
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
         );
       },
     );
   }
 
-  Future<void> _pickThresholdColor({required bool isHit}) async {
-    final current = isHit ? _hitColor : _missColor;
-    final picked = await _showColorPicker(context, current);
-    if (picked == null) return;
-    setState(() {
-      if (isHit) {
-        _hitColor = picked;
-      } else {
-        _missColor = picked;
-      }
-    });
-  }
-
-  Widget _colorRow(String label, Color color, VoidCallback onTap) {
+  Widget _optionButton({
+    required bool selected,
+    required VoidCallback onTap,
+    required Widget child,
+    EdgeInsetsGeometry padding = const EdgeInsets.symmetric(
+      horizontal: 12,
+      vertical: 8,
+    ),
+  }) {
+    final borderColor =
+        selected ? const Color(0xFF2A9D8F) : Colors.black26;
+    final backgroundColor =
+        selected ? const Color(0x142A9D8F) : Colors.transparent;
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          children: [
-            SizedBox(width: 46, child: Text(label)),
-            const SizedBox(width: 8),
-            Container(
-              width: 28,
-              height: 28,
-              decoration: BoxDecoration(
-                color: color,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: Colors.black12),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(child: Text(colorName(color))),
-          ],
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: padding,
+        decoration: BoxDecoration(
+          color: backgroundColor,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: borderColor),
+        ),
+        child: DefaultTextStyle.merge(
+          style: const TextStyle(fontWeight: FontWeight.w600),
+          child: child,
         ),
       ),
     );
   }
 
-  Widget _thresholdColorPicker(
-    String label,
-    Color color,
-    VoidCallback onTap,
-  ) {
-    final textStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
-          fontWeight: FontWeight.w600,
-        );
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(label, style: textStyle),
-            const SizedBox(height: 6),
-            Container(
-              width: 30,
-              height: 30,
-              decoration: BoxDecoration(
-                color: color,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.black26),
+  Widget _colorIcon(Color color, {bool showClear = false}) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Container(
+          width: 18,
+          height: 18,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: Colors.black26),
+          ),
+        ),
+        if (showClear)
+          const Icon(
+            Icons.close,
+            size: 12,
+            color: Colors.black54,
+          ),
+      ],
+    );
+  }
+
+  Widget _compareModeButton({
+    required CompareMode mode,
+    required IconData icon,
+    required String label,
+  }) {
+    final selected = _mode == mode;
+    final borderColor =
+        selected ? const Color(0xFF2A9D8F) : Colors.black26;
+    final textColor = selected ? const Color(0xFF2A9D8F) : Colors.black54;
+    final backgroundColor =
+        selected ? const Color(0x142A9D8F) : Colors.transparent;
+    return Expanded(
+      child: InkWell(
+        onTap: () => _updateMode(mode),
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: backgroundColor,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: borderColor),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 18, color: textColor),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: textColor,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -424,7 +573,7 @@ class _DyeGamePageState extends State<DyeGamePage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          '数字栏',
+          '数字',
           style: theme.textTheme.titleLarge?.copyWith(
             fontWeight: FontWeight.w700,
           ),
@@ -483,47 +632,42 @@ class _DyeGamePageState extends State<DyeGamePage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '配置栏',
+              '配置',
               style: theme.textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.w700,
               ),
             ),
             const SizedBox(height: 12),
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  child: DropdownButtonFormField<CompareMode>(
-                    value: _mode,
-                    isExpanded: true,
-                    items: CompareMode.values
-                        .map(
-                          (mode) => DropdownMenuItem(
-                            value: mode,
-                            child: Text(mode.label),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (mode) {
-                      if (mode == null) return;
-                      setState(() => _mode = mode);
-                    },
-                    decoration: InputDecoration(
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 10,
+                  child: Row(
+                    children: [
+                      _compareModeButton(
+                        mode: CompareMode.horizontal,
+                        icon: Icons.swap_horiz,
+                        label: '横向',
                       ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
+                      const SizedBox(width: 8),
+                      _compareModeButton(
+                        mode: CompareMode.vertical,
+                        icon: Icons.swap_vert,
+                        label: '纵向',
                       ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: Colors.black26),
+                      const SizedBox(width: 8),
+                      _compareModeButton(
+                        mode: CompareMode.diagonalDownRight,
+                        icon: Icons.south_east,
+                        label: '斜右下',
                       ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: Color(0xFF2A9D8F)),
+                      const SizedBox(width: 8),
+                      _compareModeButton(
+                        mode: CompareMode.diagonalDownLeft,
+                        icon: Icons.south_west,
+                        label: '斜左下',
                       ),
-                    ),
+                    ],
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -548,9 +692,9 @@ class _DyeGamePageState extends State<DyeGamePage> {
                     ),
                     const SizedBox(height: 8),
                     OutlinedButton.icon(
-                      onPressed: _clearAll,
-                      icon: const Icon(Icons.restart_alt, size: 16),
-                      label: const Text('全体清0'),
+                      onPressed: _shiftUpAll,
+                      icon: const Icon(Icons.arrow_upward, size: 16),
+                      label: const Text('上移一行'),
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 10,
@@ -571,76 +715,42 @@ class _DyeGamePageState extends State<DyeGamePage> {
             Text('染色阈值', style: theme.textTheme.titleMedium),
             const SizedBox(height: 6),
             Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _thresholdColorPicker(
-                  '≤阈值',
-                  _hitColor,
-                  () => _pickThresholdColor(isHit: true),
-                ),
-                const SizedBox(width: 8),
                 Expanded(
-                  child: Column(
-                    children: [
-                      Slider(
-                        value: _threshold.toDouble(),
-                        min: 0,
-                        max: 5,
-                        divisions: 5,
-                        label: _threshold.toString(),
-                        onChanged: (value) {
-                          setState(() => _threshold = value.round());
-                        },
-                      ),
-                      const SizedBox(height: 2),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black87,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          _threshold.toString(),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ],
+                  child: Slider(
+                    value: _threshold.toDouble(),
+                    min: 0,
+                    max: 5,
+                    divisions: 5,
+                    label: _threshold.toString(),
+                    onChanged: (value) {
+                      _updateThreshold(value.round());
+                    },
                   ),
                 ),
                 const SizedBox(width: 8),
-                _thresholdColorPicker(
-                  '>阈值',
-                  _missColor,
-                  () => _pickThresholdColor(isHit: false),
+                InkWell(
+                  onTap: _recolor,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black87,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      _threshold.toString(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
                 ),
               ],
-            ),
-            const SizedBox(height: 12),
-            Center(
-              child: ElevatedButton.icon(
-                onPressed: _applyColoring,
-                icon: const Icon(Icons.brush),
-                label: const Text('开始染色'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _hitColor,
-                  foregroundColor: Colors.white,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 30, vertical: 14),
-                  textStyle: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-              ),
             ),
           ],
         ),
