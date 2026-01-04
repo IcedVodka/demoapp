@@ -10,7 +10,45 @@ import '../models/compare_mode.dart';
 import '../models/diff_marker.dart';
 import '../utils/color_utils.dart';
 import '../widgets/calculation_panel.dart';
+import '../widgets/number_cell.dart';
 import '../widgets/number_grid.dart';
+
+enum _RowPattern {
+  red3,
+  red2blue1,
+  red1blue2,
+  blue3,
+}
+
+extension _RowPatternX on _RowPattern {
+  int get redCount {
+    switch (this) {
+      case _RowPattern.red3:
+        return 3;
+      case _RowPattern.red2blue1:
+        return 2;
+      case _RowPattern.red1blue2:
+        return 1;
+      case _RowPattern.blue3:
+        return 0;
+    }
+  }
+
+  int get blueCount => 3 - redCount;
+
+  String get label {
+    switch (this) {
+      case _RowPattern.red3:
+        return '3红';
+      case _RowPattern.red2blue1:
+        return '2红1蓝';
+      case _RowPattern.red1blue2:
+        return '1红2蓝';
+      case _RowPattern.blue3:
+        return '3蓝';
+    }
+  }
+}
 
 class DyeGamePage extends StatefulWidget {
   const DyeGamePage({super.key});
@@ -25,10 +63,17 @@ class _DyeGamePageState extends State<DyeGamePage> {
   static const double _minorGap = 0;
   static const double _majorGap = 14;
   static const double _cellRadius = 0;
+  static const int _customRowCount = 10;
+  static const int _customColCount = 3;
+  static const double _customCellGap = 4;
+  static const double _customCellRadius = 8;
   static const Color _baseColor = kBaseCellColor;
   static const String _storageKey = 'dye_game_state_v2';
+  static const _RowPattern _defaultRowPattern = _RowPattern.red2blue1;
   Color _hitColor = const Color(0xFFE53935);
   Color _missColor = const Color(0xFF1E88E5);
+  final GlobalKey<CalculationPanelState> _calculationPanelKey =
+      GlobalKey<CalculationPanelState>();
 
   final List<List<CellData>> _cells = List.generate(
     _rowCount,
@@ -40,6 +85,20 @@ class _DyeGamePageState extends State<DyeGamePage> {
         lockOrder: null,
       ),
     ),
+  );
+  final List<List<CellData>> _customCells = List.generate(
+    _customRowCount,
+    (_) => List.generate(
+      _customColCount,
+      (_) => CellData(
+        value: null,
+        colors: List<Color>.filled(4, _baseColor),
+      ),
+    ),
+  );
+  final List<_RowPattern> _customRowPatterns = List.generate(
+    _customRowCount,
+    (_) => _defaultRowPattern,
   );
 
   CompareMode _mode = CompareMode.horizontal;
@@ -100,6 +159,74 @@ class _DyeGamePageState extends State<DyeGamePage> {
       parsed.add(row);
     }
 
+    List<List<CellData>>? customParsed;
+    final customCellsData = decoded['customCells'];
+    if (customCellsData is List && customCellsData.length >= _customRowCount) {
+      final parsedCustom = <List<CellData>>[];
+      var valid = true;
+      for (int rowIndex = 0; rowIndex < _customRowCount; rowIndex++) {
+        final rowData = customCellsData[rowIndex];
+        if (rowData is! List || rowData.length < _customColCount) {
+          valid = false;
+          break;
+        }
+        final row = <CellData>[];
+        for (int colIndex = 0; colIndex < _customColCount; colIndex++) {
+          final cellData = rowData[colIndex];
+          if (cellData is! Map<String, dynamic>) {
+            valid = false;
+            break;
+          }
+          final colorsData = cellData['colors'];
+          final colors = <Color>[];
+          if (colorsData is List && colorsData.length == 4) {
+            for (final colorValue in colorsData) {
+              if (colorValue is num) {
+                colors.add(Color(colorValue.toInt()));
+              } else {
+                colors.add(_baseColor);
+              }
+            }
+          } else {
+            colors.addAll(List<Color>.filled(4, _baseColor));
+          }
+          final value = cellData['value'];
+          row.add(
+            CellData(
+              value: value is num ? value.toInt() : null,
+              colors: colors,
+            ),
+          );
+        }
+        if (!valid) break;
+        parsedCustom.add(row);
+      }
+      if (valid && parsedCustom.length == _customRowCount) {
+        customParsed = parsedCustom;
+      }
+    }
+
+    List<_RowPattern>? customPatterns;
+    final customPatternData = decoded['customPatterns'];
+    if (customPatternData is List) {
+      final parsedPatterns = List<_RowPattern>.filled(
+        _customRowCount,
+        _defaultRowPattern,
+      );
+      final count = min(customPatternData.length, _customRowCount);
+      for (int index = 0; index < count; index++) {
+        final name = customPatternData[index];
+        if (name is String) {
+          final match = _RowPattern.values.firstWhere(
+            (pattern) => pattern.name == name,
+            orElse: () => parsedPatterns[index],
+          );
+          parsedPatterns[index] = match;
+        }
+      }
+      customPatterns = parsedPatterns;
+    }
+
     if (!mounted) return;
     setState(() {
       final modeName = decoded['mode'];
@@ -148,6 +275,23 @@ class _DyeGamePageState extends State<DyeGamePage> {
           target.lockOrder = source.lockOrder;
         }
       }
+      if (customParsed != null) {
+        for (int row = 0; row < _customRowCount; row++) {
+          for (int col = 0; col < _customColCount; col++) {
+            final source = customParsed[row][col];
+            final target = _customCells[row][col];
+            target.value = source.value;
+            target.colors = List<Color>.from(source.colors);
+            target.locked = false;
+            target.lockOrder = null;
+          }
+        }
+      }
+      if (customPatterns != null) {
+        for (int index = 0; index < _customRowCount; index++) {
+          _customRowPatterns[index] = customPatterns[index];
+        }
+      }
       _normalizeLockOrders();
       _applyColoring(updateColors: false);
     });
@@ -175,6 +319,20 @@ class _DyeGamePageState extends State<DyeGamePage> {
                 .toList(),
           )
           .toList(),
+      'customCells': _customCells
+          .map(
+            (row) => row
+                .map(
+                  (cell) => {
+                    'value': cell.value,
+                    'colors': cell.colors.map((color) => color.value).toList(),
+                  },
+                )
+                .toList(),
+          )
+          .toList(),
+      'customPatterns':
+          _customRowPatterns.map((pattern) => pattern.name).toList(),
     };
     await prefs.setString(_storageKey, jsonEncode(data));
   }
@@ -484,6 +642,54 @@ class _DyeGamePageState extends State<DyeGamePage> {
     );
   }
 
+  void _showCombinationDialog(String title, List<String> combinations) {
+    final sorted = List<String>.from(combinations)..sort();
+    showDialog<void>(
+      context: context,
+      builder: (context) {
+        final theme = Theme.of(context);
+        return AlertDialog(
+          title: Text('$title（${sorted.length}组）'),
+          content: SizedBox(
+            width: 320,
+            child: sorted.isEmpty
+                ? Text(
+                    '暂无符合组合',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: Colors.black54,
+                    ),
+                  )
+                : Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.black12),
+                    ),
+                    child: SizedBox(
+                      height: 200,
+                      child: SingleChildScrollView(
+                        child: SelectableText(
+                          sorted.join(' '),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            height: 1.6,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('关闭'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   int _lockedCountForColumn(int columnIndex) {
     var count = 0;
     for (int row = 0; row < _rowCount; row++) {
@@ -727,6 +933,101 @@ class _DyeGamePageState extends State<DyeGamePage> {
     unawaited(_saveState());
   }
 
+  void _updateCustomPattern(int row, _RowPattern pattern) {
+    setState(() {
+      _customRowPatterns[row] = pattern;
+    });
+    unawaited(_saveState());
+  }
+
+  void _clearCustomNumbers() {
+    setState(() {
+      for (final row in _customCells) {
+        for (final cell in row) {
+          cell.value = null;
+          cell.colors = List<Color>.filled(4, _baseColor);
+          cell.locked = false;
+          cell.lockOrder = null;
+        }
+      }
+    });
+    unawaited(_saveState());
+  }
+
+  void _importCustomNumbers() {
+    final numbers = <List<int>>[];
+    final groupCount = (_colCount / 3).floor();
+    for (int row = _rowCount - 1; row >= 0; row--) {
+      for (int group = groupCount - 1; group >= 0; group--) {
+        final startCol = group * 3;
+        final digits = <int>[];
+        var complete = true;
+        for (int offset = 0; offset < 3; offset++) {
+          final value = _cells[row][startCol + offset].value;
+          if (value == null) {
+            complete = false;
+            break;
+          }
+          digits.add(value);
+        }
+        if (complete) {
+          numbers.add(digits);
+          if (numbers.length >= _customRowCount) {
+            break;
+          }
+        }
+      }
+      if (numbers.length >= _customRowCount) {
+        break;
+      }
+    }
+
+    if (numbers.isEmpty) {
+      _showSnack('暂无可导入的完整三位数');
+      return;
+    }
+
+    setState(() {
+      for (final row in _customCells) {
+        for (final cell in row) {
+          cell.value = null;
+          cell.colors = List<Color>.filled(4, _baseColor);
+          cell.locked = false;
+          cell.lockOrder = null;
+        }
+      }
+      for (int index = 0; index < numbers.length; index++) {
+        final digits = numbers[index];
+        for (int col = 0; col < _customColCount; col++) {
+          final cell = _customCells[index][col];
+          cell.value = digits[col];
+          cell.colors = List<Color>.filled(4, _baseColor);
+          cell.locked = false;
+          cell.lockOrder = null;
+        }
+      }
+    });
+    unawaited(_saveState());
+  }
+
+  void _calculateCustom() {
+    final results = _calculateCustomCombinations();
+    _showCombinationDialog('自定义计算结果', results.toList());
+  }
+
+  void _calculateTotal() {
+    final customResults = _calculateCustomCombinations();
+    final lockState = _calculationPanelKey.currentState;
+    final lockResults = lockState?.buildFilteredCombinations();
+    if (lockState != null && lockResults == null) {
+      _showSnack('012路需填写3个数字且数字之和为3');
+      return;
+    }
+    final lockSet = (lockResults ?? _calculateBaseCombinations()).toSet();
+    final results = lockSet.intersection(customResults);
+    _showCombinationDialog('总计算结果', results.toList());
+  }
+
   Future<void> _editCell(int row, int col) async {
     final cell = _cells[row][col];
     int? value = cell.value;
@@ -859,6 +1160,127 @@ class _DyeGamePageState extends State<DyeGamePage> {
                             Text(locked ? '已锁定' : '未锁定'),
                           ],
                         ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _editCustomCell(int row, int col) async {
+    final cell = _customCells[row][col];
+    int? value = cell.value;
+    List<Color> colors = List<Color>.from(cell.colors);
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('编辑自定义格子（${row + 1}, ${col + 1}）'),
+          content: StatefulBuilder(
+            builder: (context, setInnerState) {
+              void updateValue(int? nextValue) {
+                setInnerState(() => value = nextValue);
+                setState(() => cell.value = nextValue);
+                unawaited(_saveState());
+              }
+
+              void updateColors(Color nextColor) {
+                final nextColors = List<Color>.filled(4, nextColor);
+                setInnerState(() => colors = nextColors);
+                setState(() => cell.colors = List<Color>.from(nextColors));
+                unawaited(_saveState());
+              }
+
+              bool isColorSelected(Color color) {
+                return colors.every((item) => item.value == color.value);
+              }
+
+              return SizedBox(
+                width: 360,
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('数字'),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _optionButton(
+                            selected: value == null,
+                            onTap: () => updateValue(null),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            child: const Text('空'),
+                          ),
+                          ...List.generate(
+                            10,
+                            (index) => _optionButton(
+                              selected: value == index,
+                              onTap: () => updateValue(index),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              child: Text(index.toString()),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      const Text('颜色'),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _optionButton(
+                            selected: isColorSelected(_hitColor),
+                            onTap: () => updateColors(_hitColor),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _colorIcon(_hitColor),
+                                const SizedBox(width: 6),
+                                const Text('红'),
+                              ],
+                            ),
+                          ),
+                          _optionButton(
+                            selected: isColorSelected(_missColor),
+                            onTap: () => updateColors(_missColor),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _colorIcon(_missColor),
+                                const SizedBox(width: 6),
+                                const Text('蓝'),
+                              ],
+                            ),
+                          ),
+                          _optionButton(
+                            selected: isColorSelected(_baseColor),
+                            onTap: () => updateColors(_baseColor),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _colorIcon(_baseColor, showClear: true),
+                                const SizedBox(width: 6),
+                                const Text('清空'),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -1294,7 +1716,10 @@ class _DyeGamePageState extends State<DyeGamePage> {
         allowedDigits[columnIndex].removeAll(toRemove);
       }
     }
+    return _buildCombinationsFromAllowed(allowedDigits);
+  }
 
+  List<String> _buildCombinationsFromAllowed(List<Set<int>> allowedDigits) {
     final hundreds = allowedDigits[0].toList()..sort();
     final tens = allowedDigits[1].toList()..sort();
     final ones = allowedDigits[2].toList()..sort();
@@ -1302,6 +1727,146 @@ class _DyeGamePageState extends State<DyeGamePage> {
     for (final h in hundreds) {
       for (final t in tens) {
         for (final o in ones) {
+          combinations.add('$h$t$o');
+        }
+      }
+    }
+    return combinations;
+  }
+
+  Set<String> _calculateCustomCombinations() {
+    Set<String>? merged;
+    var hasRow = false;
+    for (int row = 0; row < _customRowCount; row++) {
+      final digits = _customRowDigits(row);
+      if (digits == null) continue;
+      hasRow = true;
+      final assignments = _rowColorAssignments(row);
+      if (assignments.isEmpty) return <String>{};
+      final rowResults = <String>{};
+      for (final assignment in assignments) {
+        rowResults.addAll(_combinationsForAssignment(digits, assignment));
+      }
+      if (merged == null) {
+        merged = rowResults;
+      } else {
+        merged = merged.intersection(rowResults);
+      }
+      if (merged.isEmpty) return <String>{};
+    }
+    if (!hasRow) {
+      return _allCombinationsSet();
+    }
+    return merged ?? <String>{};
+  }
+
+  List<int>? _customRowDigits(int row) {
+    final digits = <int>[];
+    for (final cell in _customCells[row]) {
+      final value = cell.value;
+      if (value == null) return null;
+      digits.add(value);
+    }
+    return digits;
+  }
+
+  List<int> _customFixedColors(int row) {
+    final colors = <int>[];
+    for (final cell in _customCells[row]) {
+      final hasRed = _cellHasTargetColor(cell, _hitColor);
+      final hasBlue = _cellHasTargetColor(cell, _missColor);
+      if (hasRed) {
+        colors.add(1);
+      } else if (hasBlue) {
+        colors.add(-1);
+      } else {
+        colors.add(0);
+      }
+    }
+    return colors;
+  }
+
+  List<List<bool>> _rowColorAssignments(int row) {
+    final fixedColors = _customFixedColors(row);
+    final pattern = _customRowPatterns[row];
+    final requiredRed = pattern.redCount;
+    final requiredBlue = pattern.blueCount;
+    final fixedRed = fixedColors.where((value) => value == 1).length;
+    final fixedBlue = fixedColors.where((value) => value == -1).length;
+    if (fixedRed > requiredRed || fixedBlue > requiredBlue) {
+      return [];
+    }
+    final unknownIndices = <int>[];
+    for (int index = 0; index < fixedColors.length; index++) {
+      if (fixedColors[index] == 0) {
+        unknownIndices.add(index);
+      }
+    }
+    final remainingRed = requiredRed - fixedRed;
+    if (remainingRed < 0 || remainingRed > unknownIndices.length) {
+      return [];
+    }
+    final base = List<bool>.filled(_customColCount, false);
+    for (int index = 0; index < fixedColors.length; index++) {
+      if (fixedColors[index] == 1) {
+        base[index] = true;
+      }
+    }
+    final assignments = <List<bool>>[];
+    final totalMasks = 1 << unknownIndices.length;
+    for (int mask = 0; mask < totalMasks; mask++) {
+      if (_bitCount(mask) != remainingRed) continue;
+      final assignment = List<bool>.from(base);
+      for (int bit = 0; bit < unknownIndices.length; bit++) {
+        final index = unknownIndices[bit];
+        assignment[index] = (mask & (1 << bit)) != 0;
+      }
+      assignments.add(assignment);
+    }
+    return assignments;
+  }
+
+  int _bitCount(int value) {
+    var count = 0;
+    var current = value;
+    while (current > 0) {
+      count += current & 1;
+      current >>= 1;
+    }
+    return count;
+  }
+
+  Set<String> _combinationsForAssignment(
+    List<int> digits,
+    List<bool> isRed,
+  ) {
+    final allowedDigits = List.generate(
+      3,
+      (_) => <int>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9},
+    );
+    for (int index = 0; index < digits.length; index++) {
+      final value = digits[index];
+      final hasRed = isRed[index];
+      final hasBlue = !isRed[index];
+      allowedDigits[index].removeWhere((candidate) {
+        final distance = _digitDiff(value, candidate);
+        if (hasRed && (distance == 4 || distance == 5)) {
+          return true;
+        }
+        if (hasBlue && (distance == 0 || distance == 1)) {
+          return true;
+        }
+        return false;
+      });
+    }
+    return _buildCombinationsFromAllowed(allowedDigits).toSet();
+  }
+
+  Set<String> _allCombinationsSet() {
+    final combinations = <String>{};
+    for (int h = 0; h < 10; h++) {
+      for (int t = 0; t < 10; t++) {
+        for (int o = 0; o < 10; o++) {
           combinations.add('$h$t$o');
         }
       }
@@ -1416,45 +1981,288 @@ class _DyeGamePageState extends State<DyeGamePage> {
     );
   }
 
-  Widget _buildCalculationPage() {
+  Widget _buildLockCalculationPanel() {
     final theme = Theme.of(context);
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.94),
-              borderRadius: BorderRadius.circular(18),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x14000000),
-                  blurRadius: 14,
-                  offset: Offset(0, 8),
-                ),
-              ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '计算',
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  CalculationPanel(
-                    baseCombinationsBuilder: _calculateBaseCombinations,
-                  ),
-                ],
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.94),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x14000000),
+            blurRadius: 14,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '锁定展示计算',
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w700,
               ),
+            ),
+            const SizedBox(height: 12),
+            CalculationPanel(
+              key: _calculationPanelKey,
+              baseCombinationsBuilder: _calculateBaseCombinations,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCustomCalculationPanel() {
+    final theme = Theme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.94),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x14000000),
+            blurRadius: 14,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '自定义计算',
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 12),
+            _buildCustomGrid(),
+            const SizedBox(height: 16),
+            _buildCustomActions(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCustomRowOptions(int row) {
+    final selected = _customRowPatterns[row];
+    final options = _RowPattern.values;
+    final children = <Widget>[];
+    for (int index = 0; index < options.length; index++) {
+      final pattern = options[index];
+      children.add(
+        Expanded(
+          child: _optionButton(
+            selected: selected == pattern,
+            onTap: () => _updateCustomPattern(row, pattern),
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            child: Text(
+              pattern.label,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 11),
             ),
           ),
         ),
+      );
+      if (index != options.length - 1) {
+        children.add(const SizedBox(width: 4));
+      }
+    }
+    return Row(children: children);
+  }
+
+  Widget _buildCustomGrid() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const rowGap = 6.0;
+        const optionGap = 12.0;
+        const minOptionWidth = 170.0;
+        const minCellSize = 24.0;
+        const maxCellSize = 36.0;
+        final availableWidth = constraints.maxWidth;
+        final cellSize = ((availableWidth -
+                    minOptionWidth -
+                    optionGap -
+                    _customCellGap * (_customColCount - 1)) /
+                _customColCount)
+            .clamp(minCellSize, maxCellSize)
+            .toDouble();
+        final gridWidth =
+            cellSize * _customColCount + _customCellGap * (_customColCount - 1);
+        return Column(
+          children: List.generate(
+            _customRowCount,
+            (row) {
+              final rowCells = <Widget>[];
+              for (int col = 0; col < _customColCount; col++) {
+                rowCells.add(
+                  SizedBox(
+                    width: cellSize,
+                    height: cellSize,
+                    child: NumberCell(
+                      cell: _customCells[row][col],
+                      radius: _customCellRadius,
+                      onTap: () => _editCustomCell(row, col),
+                    ),
+                  ),
+                );
+                if (col != _customColCount - 1) {
+                  rowCells.add(SizedBox(width: _customCellGap));
+                }
+              }
+              return Padding(
+                padding: EdgeInsets.only(
+                  bottom: row == _customRowCount - 1 ? 0 : rowGap,
+                ),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: gridWidth,
+                      child: Row(children: rowCells),
+                    ),
+                    const SizedBox(width: optionGap),
+                    Expanded(child: _buildCustomRowOptions(row)),
+                  ],
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCustomActions() {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _clearCustomNumbers,
+                icon: const Icon(Icons.cleaning_services, size: 16),
+                label: const Text('清空数字'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  textStyle: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _importCustomNumbers,
+                icon: const Icon(Icons.download, size: 16),
+                label: const Text('导入数字'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  textStyle: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: _calculateCustom,
+                icon: const Icon(Icons.calculate),
+                label: const Text('计算'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  textStyle: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: _calculateTotal,
+                icon: const Icon(Icons.functions),
+                label: const Text('总计算'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  textStyle: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCalculationPage() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isWide = constraints.maxWidth >= 960;
+          final lockPanel = ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: _buildLockCalculationPanel(),
+          );
+          final customPanel = ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 620),
+            child: _buildCustomCalculationPanel(),
+          );
+          if (isWide) {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    child: lockPanel,
+                  ),
+                ),
+                const SizedBox(width: 24),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    child: customPanel,
+                  ),
+                ),
+              ],
+            );
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Align(
+                alignment: Alignment.topCenter,
+                child: lockPanel,
+              ),
+              const SizedBox(height: 24),
+              Align(
+                alignment: Alignment.topCenter,
+                child: customPanel,
+              ),
+            ],
+          );
+        },
       ),
     );
   }

@@ -14,7 +14,7 @@ class CalculationPanel extends StatefulWidget {
   final List<String> Function() baseCombinationsBuilder;
 
   @override
-  State<CalculationPanel> createState() => _CalculationPanelState();
+  State<CalculationPanel> createState() => CalculationPanelState();
 }
 
 enum _SizePattern {
@@ -64,7 +64,7 @@ class _Option<T> {
   const _Option(this.value, this.label);
 }
 
-class _CalculationPanelState extends State<CalculationPanel> {
+class CalculationPanelState extends State<CalculationPanel> {
   static const String _storageKey = 'calculation_panel_config_v1';
 
   final Set<int> _mustHaveDigits = {};
@@ -301,17 +301,15 @@ class _CalculationPanelState extends State<CalculationPanel> {
     );
   }
 
-  void _onCalculate() {
+  List<String>? buildFilteredCombinations() {
     final routeRequirement = _parseRouteRequirement();
     if (routeRequirement == null && _hasRouteInput()) {
-      _showSnack('012路需填写3个数字且数字之和为3');
-      return;
+      return null;
     }
 
     final baseCombinations = widget.baseCombinationsBuilder();
     if (_noFiltersSelected() && routeRequirement == null) {
-      _showResultDialog(baseCombinations);
-      return;
+      return baseCombinations;
     }
 
     final results = <String>[];
@@ -319,6 +317,15 @@ class _CalculationPanelState extends State<CalculationPanel> {
       final digits = _digitsFrom(combination);
       if (!_matchesFilters(digits, routeRequirement)) continue;
       results.add(combination);
+    }
+    return results;
+  }
+
+  void _onCalculate() {
+    final results = buildFilteredCombinations();
+    if (results == null) {
+      _showSnack('012路需填写3个数字且数字之和为3');
+      return;
     }
     _showResultDialog(results);
   }
