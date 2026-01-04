@@ -58,27 +58,51 @@ class NumberGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final extent = min(constraints.maxWidth, constraints.maxHeight);
+        final rowCount = cells.length;
+        if (rowCount == 0) {
+          return const SizedBox.shrink();
+        }
+        final colCount = cells.first.length;
+        if (colCount == 0) {
+          return const SizedBox.shrink();
+        }
+        final maxWidth = constraints.maxWidth;
+        final maxHeight = constraints.maxHeight;
+        final extent = min(maxWidth, maxHeight);
         final selectorExtent = showFixedSelectors
             ? (extent * 0.045).clamp(12.0, 20.0)
             : 0.0;
         final selectorGap = showFixedSelectors
             ? (extent * 0.015).clamp(4.0, 8.0)
             : 0.0;
-        final gridExtent = extent - selectorExtent - selectorGap;
-        final totalGap = _totalGap(cells.length);
-        final cellSize = (gridExtent - totalGap) / cells.length;
-        final gridOffset = showFixedSelectors ? selectorExtent + selectorGap : 0.0;
+        final gridOffset =
+            showFixedSelectors ? selectorExtent + selectorGap : 0.0;
+        final gridWidth = maxWidth - gridOffset;
+        final gridHeight = maxHeight - gridOffset;
+        final totalRowGap = _totalGap(rowCount);
+        final totalColGap = _totalGap(colCount);
+        final safeGridWidth = max(0.0, gridWidth - totalColGap);
+        final safeGridHeight = max(0.0, gridHeight - totalRowGap);
+        final cellSize = min(
+          safeGridWidth / colCount,
+          safeGridHeight / rowCount,
+        );
+        final actualGridWidth = cellSize * colCount + totalColGap;
+        final actualGridHeight = cellSize * rowCount + totalRowGap;
+        final extraX = (gridWidth - actualGridWidth) / 2;
+        final extraY = (gridHeight - actualGridHeight) / 2;
+        final gridStartX = gridOffset + max(0.0, extraX);
+        final gridStartY = gridOffset + max(0.0, extraY);
         final markerFontSize = (cellSize * 0.22).clamp(9.0, 14.0);
         final markerBoxSize = (cellSize * 0.34).clamp(10.0, 18.0);
         final selectorColor = Theme.of(context).colorScheme.primary;
 
         double cellStartX(int col) {
-          return gridOffset + col * cellSize + _gapBeforeIndex(col);
+          return gridStartX + col * cellSize + _gapBeforeIndex(col);
         }
 
         double cellStartY(int row) {
-          return gridOffset + row * cellSize + _gapBeforeIndex(row);
+          return gridStartY + row * cellSize + _gapBeforeIndex(row);
         }
 
         double cellCenterX(int col) => cellStartX(col) + cellSize / 2;
@@ -133,17 +157,19 @@ class NumberGrid extends StatelessWidget {
 
         final stackChildren = <Widget>[
           Positioned(
-            left: gridOffset,
-            top: gridOffset,
+            left: gridStartX,
+            top: gridStartY,
             child: SizedBox(
-              width: gridExtent,
-              height: gridExtent,
+              width: actualGridWidth,
+              height: actualGridHeight,
               child: _buildGrid(cellSize),
             ),
           ),
         ];
 
         if (showFixedSelectors) {
+          final selectorLeft = gridStartX - selectorGap - selectorExtent;
+          final selectorTop = gridStartY - selectorGap - selectorExtent;
           Widget selectorBox({
             required bool selected,
             required VoidCallback? onTap,
@@ -169,10 +195,10 @@ class NumberGrid extends StatelessWidget {
             );
           }
 
-          for (int row = 0; row < cells.length; row++) {
+          for (int row = 0; row < rowCount; row++) {
             stackChildren.add(
               Positioned(
-                left: 0,
+                left: selectorLeft,
                 top: cellCenterY(row) - selectorExtent / 2,
                 child: selectorBox(
                   selected: selectedRow == row,
@@ -182,10 +208,10 @@ class NumberGrid extends StatelessWidget {
               ),
             );
           }
-          for (int col = 0; col < cells.length; col++) {
+          for (int col = 0; col < colCount; col++) {
             stackChildren.add(
               Positioned(
-                top: 0,
+                top: selectorTop,
                 left: cellCenterX(col) - selectorExtent / 2,
                 child: selectorBox(
                   selected: selectedCol == col,
@@ -233,8 +259,8 @@ class NumberGrid extends StatelessWidget {
         }
 
         return SizedBox(
-          width: extent,
-          height: extent,
+          width: maxWidth,
+          height: maxHeight,
           child: Stack(children: stackChildren),
         );
       },

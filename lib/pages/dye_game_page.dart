@@ -19,7 +19,8 @@ class DyeGamePage extends StatefulWidget {
 }
 
 class _DyeGamePageState extends State<DyeGamePage> {
-  static const int _gridSize = 9;
+  static const int _rowCount = 9;
+  static const int _colCount = 6;
   static const double _minorGap = 0;
   static const double _majorGap = 14;
   static const double _cellRadius = 0;
@@ -29,9 +30,9 @@ class _DyeGamePageState extends State<DyeGamePage> {
   Color _missColor = const Color(0xFF1E88E5);
 
   final List<List<CellData>> _cells = List.generate(
-    _gridSize,
+    _rowCount,
     (_) => List.generate(
-      _gridSize,
+      _colCount,
       (_) => CellData(
         value: null,
         colors: List<Color>.filled(4, _baseColor),
@@ -59,13 +60,15 @@ class _DyeGamePageState extends State<DyeGamePage> {
     final decoded = jsonDecode(raw);
     if (decoded is! Map<String, dynamic>) return;
     final cellsData = decoded['cells'];
-    if (cellsData is! List || cellsData.length != _gridSize) return;
+    if (cellsData is! List || cellsData.length < _rowCount) return;
 
     final parsed = <List<CellData>>[];
-    for (final rowData in cellsData) {
-      if (rowData is! List || rowData.length != _gridSize) return;
+    for (int rowIndex = 0; rowIndex < _rowCount; rowIndex++) {
+      final rowData = cellsData[rowIndex];
+      if (rowData is! List || rowData.length < _colCount) return;
       final row = <CellData>[];
-      for (final cellData in rowData) {
+      for (int colIndex = 0; colIndex < _colCount; colIndex++) {
+        final cellData = rowData[colIndex];
         if (cellData is! Map<String, dynamic>) return;
         final colorsData = cellData['colors'];
         if (colorsData is! List || colorsData.length != 4) return;
@@ -112,7 +115,7 @@ class _DyeGamePageState extends State<DyeGamePage> {
       if (fixedRowValue is num) {
         final rowIndex = fixedRowValue.toInt();
         _fixedRow =
-            rowIndex >= 0 && rowIndex < _gridSize ? rowIndex : null;
+            rowIndex >= 0 && rowIndex < _rowCount ? rowIndex : null;
       } else {
         _fixedRow = null;
       }
@@ -120,15 +123,15 @@ class _DyeGamePageState extends State<DyeGamePage> {
       if (fixedColValue is num) {
         final colIndex = fixedColValue.toInt();
         _fixedCol =
-            colIndex >= 0 && colIndex < _gridSize ? colIndex : null;
+            colIndex >= 0 && colIndex < _colCount ? colIndex : null;
       } else {
         _fixedCol = null;
       }
       if (_fixedRow != null && _fixedCol != null) {
         _fixedCol = null;
       }
-      for (int row = 0; row < _gridSize; row++) {
-        for (int col = 0; col < _gridSize; col++) {
+      for (int row = 0; row < _rowCount; row++) {
+        for (int col = 0; col < _colCount; col++) {
           final source = parsed[row][col];
           final target = _cells[row][col];
           target.value = source.value;
@@ -167,8 +170,8 @@ class _DyeGamePageState extends State<DyeGamePage> {
 
   void _applyColoring({bool updateColors = true}) {
     if (updateColors) {
-      for (int row = 0; row < _gridSize; row++) {
-        for (int col = 0; col < _gridSize; col++) {
+      for (int row = 0; row < _rowCount; row++) {
+        for (int col = 0; col < _colCount; col++) {
           final cell = _cells[row][col];
           if (cell.locked) continue;
           cell.colors = List<Color>.filled(4, _baseColor);
@@ -179,8 +182,8 @@ class _DyeGamePageState extends State<DyeGamePage> {
     switch (_mode) {
       case CompareMode.horizontal:
         final step = _cross3Compare ? 3 : 1;
-        for (int row = 0; row < _gridSize; row++) {
-          for (int col = 0; col < _gridSize - step; col++) {
+        for (int row = 0; row < _rowCount; row++) {
+          for (int col = 0; col < _colCount - step; col++) {
             final a = _cells[row][col].value;
             final b = _cells[row][col + step].value;
             final color = _pairColor(a, b);
@@ -196,15 +199,18 @@ class _DyeGamePageState extends State<DyeGamePage> {
                 rowB: row,
                 colB: col + step,
                 value: _digitDiff(a!, b!),
-              ),
+                ),
             );
           }
+        }
+        if (updateColors) {
+          _fillHorizontalEdges(step);
         }
         break;
       case CompareMode.vertical:
         final step = _cross3Compare ? 3 : 1;
-        for (int row = 0; row < _gridSize - step; row++) {
-          for (int col = 0; col < _gridSize; col++) {
+        for (int row = 0; row < _rowCount - step; row++) {
+          for (int col = 0; col < _colCount; col++) {
             final a = _cells[row][col].value;
             final b = _cells[row + step][col].value;
             final color = _pairColor(a, b);
@@ -220,21 +226,23 @@ class _DyeGamePageState extends State<DyeGamePage> {
                 rowB: row + step,
                 colB: col,
                 value: _digitDiff(a!, b!),
-              ),
+                ),
             );
           }
         }
+        if (updateColors) {
+          _fillVerticalEdges(step);
+        }
         break;
       case CompareMode.diagonalDownRight:
-        for (int row = 0; row < _gridSize - 1; row++) {
-          for (int col = 0; col < _gridSize - 1; col++) {
+        for (int row = 0; row < _rowCount - 1; row++) {
+          for (int col = 0; col < _colCount - 1; col++) {
             final a = _cells[row][col].value;
             final b = _cells[row + 1][col + 1].value;
             final color = _pairColor(a, b);
             if (color == null) continue;
             if (updateColors) {
-              _setBottomRight(row, col, color);
-              _setTopLeft(row + 1, col + 1, color);
+              _setDiagonalDownRightCluster(row, col, color);
             }
             markers.add(
               DiffMarker(
@@ -249,15 +257,14 @@ class _DyeGamePageState extends State<DyeGamePage> {
         }
         break;
       case CompareMode.diagonalDownLeft:
-        for (int row = 0; row < _gridSize - 1; row++) {
-          for (int col = 1; col < _gridSize; col++) {
+        for (int row = 0; row < _rowCount - 1; row++) {
+          for (int col = 1; col < _colCount; col++) {
             final a = _cells[row][col].value;
             final b = _cells[row + 1][col - 1].value;
             final color = _pairColor(a, b);
             if (color == null) continue;
             if (updateColors) {
-              _setBottomLeft(row, col, color);
-              _setTopRight(row + 1, col - 1, color);
+              _setDiagonalDownLeftCluster(row, col, color);
             }
             markers.add(
               DiffMarker(
@@ -275,9 +282,9 @@ class _DyeGamePageState extends State<DyeGamePage> {
         final fixedRow = _fixedRow;
         final fixedCol = _fixedCol;
         if (fixedRow != null) {
-          for (int row = 0; row < _gridSize; row++) {
+          for (int row = 0; row < _rowCount; row++) {
             if (row == fixedRow) continue;
-            for (int col = 0; col < _gridSize; col++) {
+            for (int col = 0; col < _colCount; col++) {
               final a = _cells[fixedRow][col].value;
               final b = _cells[row][col].value;
               final color = _pairColor(a, b);
@@ -297,8 +304,8 @@ class _DyeGamePageState extends State<DyeGamePage> {
             }
           }
         } else if (fixedCol != null) {
-          for (int row = 0; row < _gridSize; row++) {
-            for (int col = 0; col < _gridSize; col++) {
+          for (int row = 0; row < _rowCount; row++) {
+            for (int col = 0; col < _colCount; col++) {
               if (col == fixedCol) continue;
               final a = _cells[row][fixedCol].value;
               final b = _cells[row][col].value;
@@ -403,8 +410,8 @@ class _DyeGamePageState extends State<DyeGamePage> {
                 .toList(),
           )
           .toList();
-      for (int row = 0; row < _gridSize - 1; row++) {
-        for (int col = 0; col < _gridSize; col++) {
+      for (int row = 0; row < _rowCount - 1; row++) {
+        for (int col = 0; col < _colCount; col++) {
           final source = snapshot[row + 1][col];
           final target = _cells[row][col];
           target.value = source.value;
@@ -412,8 +419,8 @@ class _DyeGamePageState extends State<DyeGamePage> {
           target.locked = source.locked;
         }
       }
-      for (int col = 0; col < _gridSize; col++) {
-        final cell = _cells[_gridSize - 1][col];
+      for (int col = 0; col < _colCount; col++) {
+        final cell = _cells[_rowCount - 1][col];
         cell.value = null;
         cell.locked = false;
         cell.colors = List<Color>.filled(4, _baseColor);
@@ -492,6 +499,101 @@ class _DyeGamePageState extends State<DyeGamePage> {
     for (int index = 0; index < cell.colors.length; index++) {
       cell.colors[index] = color;
     }
+  }
+
+  bool _isBaseColor(Color color) => color.value == _baseColor.value;
+
+  bool _isHalfBase(CellData cell, int indexA, int indexB) {
+    return _isBaseColor(cell.colors[indexA]) &&
+        _isBaseColor(cell.colors[indexB]);
+  }
+
+  Color? _halfColor(CellData cell, int indexA, int indexB) {
+    final colorA = cell.colors[indexA];
+    if (!_isBaseColor(colorA)) return colorA;
+    final colorB = cell.colors[indexB];
+    if (!_isBaseColor(colorB)) return colorB;
+    return null;
+  }
+
+  void _fillLeftHalfFromRight(int row, int col) {
+    final cell = _cells[row][col];
+    if (cell.locked) return;
+    if (!_isHalfBase(cell, 0, 2)) return;
+    final color = _halfColor(cell, 1, 3);
+    if (color == null) return;
+    _setLeftHalf(row, col, color);
+  }
+
+  void _fillRightHalfFromLeft(int row, int col) {
+    final cell = _cells[row][col];
+    if (cell.locked) return;
+    if (!_isHalfBase(cell, 1, 3)) return;
+    final color = _halfColor(cell, 0, 2);
+    if (color == null) return;
+    _setRightHalf(row, col, color);
+  }
+
+  void _fillTopHalfFromBottom(int row, int col) {
+    final cell = _cells[row][col];
+    if (cell.locked) return;
+    if (!_isHalfBase(cell, 0, 1)) return;
+    final color = _halfColor(cell, 2, 3);
+    if (color == null) return;
+    _setTopHalf(row, col, color);
+  }
+
+  void _fillBottomHalfFromTop(int row, int col) {
+    final cell = _cells[row][col];
+    if (cell.locked) return;
+    if (!_isHalfBase(cell, 2, 3)) return;
+    final color = _halfColor(cell, 0, 1);
+    if (color == null) return;
+    _setBottomHalf(row, col, color);
+  }
+
+  void _fillHorizontalEdges(int step) {
+    final leftLimit = min(step, _colCount);
+    for (int row = 0; row < _rowCount; row++) {
+      for (int col = 0; col < leftLimit; col++) {
+        _fillLeftHalfFromRight(row, col);
+      }
+    }
+    final rightStart = max(0, _colCount - step);
+    for (int row = 0; row < _rowCount; row++) {
+      for (int col = rightStart; col < _colCount; col++) {
+        _fillRightHalfFromLeft(row, col);
+      }
+    }
+  }
+
+  void _fillVerticalEdges(int step) {
+    final topLimit = min(step, _rowCount);
+    for (int row = 0; row < topLimit; row++) {
+      for (int col = 0; col < _colCount; col++) {
+        _fillTopHalfFromBottom(row, col);
+      }
+    }
+    final bottomStart = max(0, _rowCount - step);
+    for (int row = bottomStart; row < _rowCount; row++) {
+      for (int col = 0; col < _colCount; col++) {
+        _fillBottomHalfFromTop(row, col);
+      }
+    }
+  }
+
+  void _setDiagonalDownRightCluster(int row, int col, Color color) {
+    _setBottomRight(row, col, color);
+    _setBottomLeft(row, col + 1, color);
+    _setTopRight(row + 1, col, color);
+    _setTopLeft(row + 1, col + 1, color);
+  }
+
+  void _setDiagonalDownLeftCluster(int row, int col, Color color) {
+    _setBottomLeft(row, col, color);
+    _setBottomRight(row, col - 1, color);
+    _setTopLeft(row + 1, col, color);
+    _setTopRight(row + 1, col - 1, color);
   }
 
   Future<void> _editCell(int row, int col) async {
