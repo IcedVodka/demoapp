@@ -11,6 +11,11 @@ import '../models/diff_marker.dart';
 import '../utils/color_utils.dart';
 import '../widgets/number_grid.dart';
 
+enum _LockPanelView {
+  locked,
+  calculation,
+}
+
 class DyeGamePage extends StatefulWidget {
   const DyeGamePage({super.key});
 
@@ -36,6 +41,7 @@ class _DyeGamePageState extends State<DyeGamePage> {
       (_) => CellData(
         value: null,
         colors: List<Color>.filled(4, _baseColor),
+        lockOrder: null,
       ),
     ),
   );
@@ -46,6 +52,8 @@ class _DyeGamePageState extends State<DyeGamePage> {
   int? _fixedRow;
   int? _fixedCol;
   List<DiffMarker> _diffMarkers = const [];
+  int _lockSequence = 0;
+  _LockPanelView _lockPanelView = _LockPanelView.locked;
 
   @override
   void initState() {
@@ -81,11 +89,15 @@ class _DyeGamePageState extends State<DyeGamePage> {
           }
         }
         final value = cellData['value'];
+        final lockOrderValue = cellData['lockOrder'];
+        final lockOrder =
+            lockOrderValue is num ? lockOrderValue.toInt() : null;
         row.add(
           CellData(
             value: value is num ? value.toInt() : null,
             colors: colors,
             locked: cellData['locked'] == true,
+            lockOrder: lockOrder,
           ),
         );
       }
@@ -137,8 +149,10 @@ class _DyeGamePageState extends State<DyeGamePage> {
           target.value = source.value;
           target.colors = List<Color>.from(source.colors);
           target.locked = source.locked;
+          target.lockOrder = source.lockOrder;
         }
       }
+      _normalizeLockOrders();
       _applyColoring(updateColors: false);
     });
   }
@@ -158,6 +172,7 @@ class _DyeGamePageState extends State<DyeGamePage> {
                   (cell) => {
                     'value': cell.value,
                     'locked': cell.locked,
+                    'lockOrder': cell.lockOrder,
                     'colors': cell.colors.map((color) => color.value).toList(),
                   },
                 )
@@ -405,6 +420,7 @@ class _DyeGamePageState extends State<DyeGamePage> {
                     value: cell.value,
                     colors: List<Color>.from(cell.colors),
                     locked: cell.locked,
+                    lockOrder: cell.lockOrder,
                   ),
                 )
                 .toList(),
@@ -417,12 +433,14 @@ class _DyeGamePageState extends State<DyeGamePage> {
           target.value = source.value;
           target.colors = List<Color>.from(source.colors);
           target.locked = source.locked;
+          target.lockOrder = source.lockOrder;
         }
       }
       for (int col = 0; col < _colCount; col++) {
         final cell = _cells[_rowCount - 1][col];
         cell.value = null;
         cell.locked = false;
+        cell.lockOrder = null;
         cell.colors = List<Color>.filled(4, _baseColor);
       }
       _applyColoring(updateColors: false);
@@ -439,6 +457,71 @@ class _DyeGamePageState extends State<DyeGamePage> {
   int _digitDiff(int a, int b) {
     final diff = (a - b).abs();
     return min(diff, 10 - diff);
+  }
+
+  int _digitColumnIndex(int col) => col % 3;
+
+  bool _cellHasColor(CellData cell) {
+    return cell.colors.any((color) => !_isBaseColor(color));
+  }
+
+  bool _cellHasUniformColor(CellData cell) {
+    if (cell.colors.isEmpty) return false;
+    final first = cell.colors.first;
+    for (final color in cell.colors) {
+      if (color.value != first.value) return false;
+    }
+    return !_isBaseColor(first);
+  }
+
+  bool _cellHasTargetColor(CellData cell, Color target) {
+    return cell.colors.any((color) => color.value == target.value);
+  }
+
+  void _showSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(milliseconds: 1600),
+      ),
+    );
+  }
+
+  int _lockedCountForColumn(int columnIndex) {
+    var count = 0;
+    for (int row = 0; row < _rowCount; row++) {
+      for (int col = 0; col < _colCount; col++) {
+        final cell = _cells[row][col];
+        if (!cell.locked) continue;
+        if (_digitColumnIndex(col) != columnIndex) continue;
+        count++;
+      }
+    }
+    return count;
+  }
+
+  void _normalizeLockOrders() {
+    var maxOrder = -1;
+    for (int row = 0; row < _rowCount; row++) {
+      for (int col = 0; col < _colCount; col++) {
+        final order = _cells[row][col].lockOrder;
+        if (order != null && order > maxOrder) {
+          maxOrder = order;
+        }
+      }
+    }
+    var nextOrder = maxOrder + 1;
+    for (int row = 0; row < _rowCount; row++) {
+      for (int col = 0; col < _colCount; col++) {
+        final cell = _cells[row][col];
+        if (cell.locked && cell.lockOrder == null) {
+          cell.lockOrder = nextOrder;
+          nextOrder++;
+        }
+      }
+    }
+    _lockSequence = nextOrder;
   }
 
   void _setLeftHalf(int row, int col, Color color) {
@@ -596,6 +679,44 @@ class _DyeGamePageState extends State<DyeGamePage> {
     _setTopRight(row + 1, col - 1, color);
   }
 
+  bool _toggleCellLock(int row, int col, bool shouldLock) {
+    final cell = _cells[row][col];
+    if (shouldLock == cell.locked) {
+      return true;
+    }
+    if (shouldLock) {
+      if (cell.value == null) {
+        _showSnack('请先填写数字再锁定');
+        return false;
+      }
+      if (!_cellHasColor(cell)) {
+        _showSnack('请先染色（自动或手动）才能锁定');
+        return false;
+      }
+      if (!_cellHasUniformColor(cell)) {
+        _showSnack('颜色不符无法锁定');
+        return false;
+      }
+      final columnIndex = _digitColumnIndex(col);
+      final lockedCount = _lockedCountForColumn(columnIndex);
+      if (lockedCount >= 4) {
+        _showSnack('该位最多锁定4个数字');
+        return false;
+      }
+      setState(() {
+        cell.locked = true;
+        cell.lockOrder = _lockSequence++;
+      });
+    } else {
+      setState(() {
+        cell.locked = false;
+        cell.lockOrder = null;
+      });
+    }
+    unawaited(_saveState());
+    return true;
+  }
+
   Future<void> _editCell(int row, int col) async {
     final cell = _cells[row][col];
     int? value = cell.value;
@@ -624,9 +745,9 @@ class _DyeGamePageState extends State<DyeGamePage> {
               }
 
               void updateLocked(bool nextValue) {
-                setInnerState(() => locked = nextValue);
-                setState(() => cell.locked = nextValue);
-                unawaited(_saveState());
+                final updated = _toggleCellLock(row, col, nextValue);
+                if (!updated) return;
+                setInnerState(() => locked = cell.locked);
               }
 
               bool isColorSelected(Color color) {
@@ -1080,6 +1201,243 @@ class _DyeGamePageState extends State<DyeGamePage> {
     );
   }
 
+  List<_LockedCellEntry> _lockedEntriesForColumn(int columnIndex) {
+    final entries = <_LockedCellEntry>[];
+    for (int row = 0; row < _rowCount; row++) {
+      for (int col = 0; col < _colCount; col++) {
+        final cell = _cells[row][col];
+        if (!cell.locked) continue;
+        if (_digitColumnIndex(col) != columnIndex) continue;
+        entries.add(
+          _LockedCellEntry(
+            row: row,
+            col: col,
+            value: cell.value,
+            colors: List<Color>.from(cell.colors),
+            order: cell.lockOrder ?? 0,
+          ),
+        );
+      }
+    }
+    entries.sort((a, b) => a.order.compareTo(b.order));
+    return entries;
+  }
+
+  _CalcResult _calculateCombinations() {
+    final allowedDigits = List.generate(
+      3,
+      (_) => <int>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9},
+    );
+    for (int row = 0; row < _rowCount; row++) {
+      for (int col = 0; col < _colCount; col++) {
+        final cell = _cells[row][col];
+        if (!cell.locked) continue;
+        final value = cell.value;
+        if (value == null) continue;
+        final hasRed = _cellHasTargetColor(cell, _hitColor);
+        final hasBlue = _cellHasTargetColor(cell, _missColor);
+        if (!hasRed && !hasBlue) continue;
+        final columnIndex = _digitColumnIndex(col);
+        final toRemove = <int>{};
+        for (int candidate = 0; candidate < 10; candidate++) {
+          final distance = _digitDiff(value, candidate);
+          if (hasRed && (distance == 4 || distance == 5)) {
+            toRemove.add(candidate);
+          }
+          if (hasBlue && (distance == 0 || distance == 1)) {
+            toRemove.add(candidate);
+          }
+        }
+        allowedDigits[columnIndex].removeAll(toRemove);
+      }
+    }
+
+    final hundreds = allowedDigits[0].toList()..sort();
+    final tens = allowedDigits[1].toList()..sort();
+    final ones = allowedDigits[2].toList()..sort();
+    final combinations = <String>[];
+    for (final h in hundreds) {
+      for (final t in tens) {
+        for (final o in ones) {
+          combinations.add('$h$t$o');
+        }
+      }
+    }
+    return _CalcResult(combinations: combinations);
+  }
+
+  Widget _buildLockDisplayGrid() {
+    final theme = Theme.of(context);
+    final labels = ['百位', '十位', '个位'];
+    final entriesByColumn = List.generate(
+      labels.length,
+      (index) => _lockedEntriesForColumn(index),
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const gap = 6.0;
+        final halfGap = gap / 2;
+        final maxWidth = constraints.maxWidth;
+        final cellSize = min(44.0, (maxWidth - gap * 2) / 3);
+        final labelStyle = theme.textTheme.bodySmall?.copyWith(
+          fontWeight: FontWeight.w600,
+          fontSize: 11,
+          color: Colors.black54,
+        );
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(
+                labels.length,
+                (index) => Padding(
+                  padding: EdgeInsets.symmetric(horizontal: halfGap),
+                  child: SizedBox(
+                    width: cellSize,
+                    child: Text(
+                      labels[index],
+                      textAlign: TextAlign.center,
+                      style: labelStyle,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            for (int row = 0; row < 4; row++)
+              Padding(
+                padding: EdgeInsets.only(bottom: row == 3 ? 0 : 6),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(
+                    labels.length,
+                    (col) {
+                      final entries = entriesByColumn[col];
+                      final entry = row < entries.length ? entries[row] : null;
+                      return Padding(
+                        padding: EdgeInsets.symmetric(horizontal: halfGap),
+                        child: SizedBox(
+                          width: cellSize,
+                          height: cellSize,
+                          child: _LockDisplayCell(
+                            value: entry?.value,
+                            colors: entry?.colors,
+                            baseColor: _baseColor,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildCalculationView() {
+    final theme = Theme.of(context);
+    final result = _calculateCombinations();
+    final combinations = result.combinations;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '共 ${combinations.length} 组',
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 8),
+        if (combinations.isEmpty)
+          Text(
+            '暂无符合组合',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: Colors.black54,
+            ),
+          )
+        else
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.black12),
+            ),
+            child: SizedBox(
+              height: 180,
+              child: SingleChildScrollView(
+                child: SelectableText(
+                  combinations.join(' '),
+                  style: theme.textTheme.bodySmall?.copyWith(height: 1.6),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildLockPanel() {
+    final theme = Theme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.94),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x14000000),
+            blurRadius: 14,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '锁定展示与计算',
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                _iconOptionButton(
+                  selected: _lockPanelView == _LockPanelView.locked,
+                  onTap: () => setState(() {
+                    _lockPanelView = _LockPanelView.locked;
+                  }),
+                  icon: Icons.lock,
+                  label: '锁定展示',
+                ),
+                const SizedBox(width: 8),
+                _iconOptionButton(
+                  selected: _lockPanelView == _LockPanelView.calculation,
+                  onTap: () => setState(() {
+                    _lockPanelView = _LockPanelView.calculation;
+                  }),
+                  icon: Icons.functions,
+                  label: '计算',
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (_lockPanelView == _LockPanelView.locked)
+              _buildLockDisplayGrid()
+            else
+              _buildCalculationView(),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1133,7 +1491,14 @@ class _DyeGamePageState extends State<DyeGamePage> {
                   );
                   final configSection = ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 420),
-                    child: _buildConfigPanel(),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _buildConfigPanel(),
+                        const SizedBox(height: 16),
+                        _buildLockPanel(),
+                      ],
+                    ),
                   );
                   if (isWide) {
                     return Row(
@@ -1158,6 +1523,107 @@ class _DyeGamePageState extends State<DyeGamePage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _LockedCellEntry {
+  final int row;
+  final int col;
+  final int? value;
+  final List<Color> colors;
+  final int order;
+
+  const _LockedCellEntry({
+    required this.row,
+    required this.col,
+    required this.value,
+    required this.colors,
+    required this.order,
+  });
+}
+
+class _CalcResult {
+  final List<String> combinations;
+
+  const _CalcResult({required this.combinations});
+}
+
+class _LockDisplayCell extends StatelessWidget {
+  const _LockDisplayCell({
+    required this.value,
+    required this.colors,
+    required this.baseColor,
+  });
+
+  final int? value;
+  final List<Color>? colors;
+  final Color baseColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final effectiveColors =
+        colors ?? List<Color>.filled(4, baseColor, growable: false);
+    final textColor = bestTextColor(effectiveColors);
+    return AspectRatio(
+      aspectRatio: 1,
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.black12),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(9),
+          child: Stack(
+            children: [
+              Column(
+                children: [
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Expanded(child: Container(color: effectiveColors[0])),
+                        Expanded(child: Container(color: effectiveColors[1])),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Expanded(child: Container(color: effectiveColors[2])),
+                        Expanded(child: Container(color: effectiveColors[3])),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              Positioned.fill(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final fontSize = constraints.maxWidth * 0.42;
+                    return Center(
+                      child: Text(
+                        value?.toString() ?? '',
+                        style: TextStyle(
+                          fontSize: fontSize,
+                          fontWeight: FontWeight.w700,
+                          color: textColor,
+                          shadows: [
+                            Shadow(
+                              color: Colors.black.withOpacity(0.25),
+                              offset: const Offset(0, 1),
+                              blurRadius: 2,
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
