@@ -1,4 +1,10 @@
-enum CompareMode { horizontal, vertical, diagonalDownRight, diagonalDownLeft }
+enum CompareMode {
+  horizontal,
+  vertical,
+  diagonalDownRight,
+  diagonalDownLeft,
+  fixed,
+}
 
 extension CompareModeLabel on CompareMode {
   String get label {
@@ -11,6 +17,8 @@ extension CompareModeLabel on CompareMode {
         return '左上-右下斜向';
       case CompareMode.diagonalDownLeft:
         return '右下-左上斜向';
+      case CompareMode.fixed:
+        return '固定比较';
     }
   }
 }

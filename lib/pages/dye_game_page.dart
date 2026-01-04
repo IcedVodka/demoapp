@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/cell_data.dart';
 import '../models/compare_mode.dart';
+import '../models/diff_marker.dart';
 import '../utils/color_utils.dart';
 import '../widgets/number_grid.dart';
 
@@ -19,9 +20,9 @@ class DyeGamePage extends StatefulWidget {
 
 class _DyeGamePageState extends State<DyeGamePage> {
   static const int _gridSize = 9;
-  static const double _minorGap = 6;
+  static const double _minorGap = 0;
   static const double _majorGap = 14;
-  static const double _cellRadius = 12;
+  static const double _cellRadius = 0;
   static const Color _baseColor = kBaseCellColor;
   static const String _storageKey = 'dye_game_state_v2';
   Color _hitColor = const Color(0xFFE53935);
@@ -40,6 +41,10 @@ class _DyeGamePageState extends State<DyeGamePage> {
 
   CompareMode _mode = CompareMode.horizontal;
   int _threshold = 2;
+  bool _cross3Compare = false;
+  int? _fixedRow;
+  int? _fixedCol;
+  List<DiffMarker> _diffMarkers = const [];
 
   @override
   void initState() {
@@ -97,6 +102,31 @@ class _DyeGamePageState extends State<DyeGamePage> {
       if (thresholdValue is num) {
         _threshold = thresholdValue.round().clamp(0, 5).toInt();
       }
+      final cross3Value = decoded['cross3Compare'];
+      if (cross3Value is bool) {
+        _cross3Compare = cross3Value;
+      } else {
+        _cross3Compare = false;
+      }
+      final fixedRowValue = decoded['fixedRow'];
+      if (fixedRowValue is num) {
+        final rowIndex = fixedRowValue.toInt();
+        _fixedRow =
+            rowIndex >= 0 && rowIndex < _gridSize ? rowIndex : null;
+      } else {
+        _fixedRow = null;
+      }
+      final fixedColValue = decoded['fixedCol'];
+      if (fixedColValue is num) {
+        final colIndex = fixedColValue.toInt();
+        _fixedCol =
+            colIndex >= 0 && colIndex < _gridSize ? colIndex : null;
+      } else {
+        _fixedCol = null;
+      }
+      if (_fixedRow != null && _fixedCol != null) {
+        _fixedCol = null;
+      }
       for (int row = 0; row < _gridSize; row++) {
         for (int col = 0; col < _gridSize; col++) {
           final source = parsed[row][col];
@@ -106,6 +136,7 @@ class _DyeGamePageState extends State<DyeGamePage> {
           target.locked = source.locked;
         }
       }
+      _applyColoring(updateColors: false);
     });
   }
 
@@ -114,6 +145,9 @@ class _DyeGamePageState extends State<DyeGamePage> {
     final data = {
       'mode': _mode.name,
       'threshold': _threshold,
+      'cross3Compare': _cross3Compare,
+      'fixedRow': _fixedRow,
+      'fixedCol': _fixedCol,
       'cells': _cells
           .map(
             (row) => row
@@ -131,68 +165,163 @@ class _DyeGamePageState extends State<DyeGamePage> {
     await prefs.setString(_storageKey, jsonEncode(data));
   }
 
-  void _applyColoring() {
-    for (int row = 0; row < _gridSize; row++) {
-      for (int col = 0; col < _gridSize; col++) {
-        final cell = _cells[row][col];
-        if (cell.locked) continue;
-        cell.colors = List<Color>.filled(4, _baseColor);
+  void _applyColoring({bool updateColors = true}) {
+    if (updateColors) {
+      for (int row = 0; row < _gridSize; row++) {
+        for (int col = 0; col < _gridSize; col++) {
+          final cell = _cells[row][col];
+          if (cell.locked) continue;
+          cell.colors = List<Color>.filled(4, _baseColor);
+        }
       }
     }
+    final markers = <DiffMarker>[];
     switch (_mode) {
       case CompareMode.horizontal:
+        final step = _cross3Compare ? 3 : 1;
         for (int row = 0; row < _gridSize; row++) {
-          for (int col = 0; col < _gridSize - 1; col++) {
-            final color = _pairColor(
-              _cells[row][col].value,
-              _cells[row][col + 1].value,
-            );
+          for (int col = 0; col < _gridSize - step; col++) {
+            final a = _cells[row][col].value;
+            final b = _cells[row][col + step].value;
+            final color = _pairColor(a, b);
             if (color == null) continue;
-            _setRightHalf(row, col, color);
-            _setLeftHalf(row, col + 1, color);
+            if (updateColors) {
+              _setRightHalf(row, col, color);
+              _setLeftHalf(row, col + step, color);
+            }
+            markers.add(
+              DiffMarker(
+                rowA: row,
+                colA: col,
+                rowB: row,
+                colB: col + step,
+                value: _digitDiff(a!, b!),
+              ),
+            );
           }
         }
         break;
       case CompareMode.vertical:
-        for (int row = 0; row < _gridSize - 1; row++) {
+        final step = _cross3Compare ? 3 : 1;
+        for (int row = 0; row < _gridSize - step; row++) {
           for (int col = 0; col < _gridSize; col++) {
-            final color = _pairColor(
-              _cells[row][col].value,
-              _cells[row + 1][col].value,
-            );
+            final a = _cells[row][col].value;
+            final b = _cells[row + step][col].value;
+            final color = _pairColor(a, b);
             if (color == null) continue;
-            _setBottomHalf(row, col, color);
-            _setTopHalf(row + 1, col, color);
+            if (updateColors) {
+              _setBottomHalf(row, col, color);
+              _setTopHalf(row + step, col, color);
+            }
+            markers.add(
+              DiffMarker(
+                rowA: row,
+                colA: col,
+                rowB: row + step,
+                colB: col,
+                value: _digitDiff(a!, b!),
+              ),
+            );
           }
         }
         break;
       case CompareMode.diagonalDownRight:
         for (int row = 0; row < _gridSize - 1; row++) {
           for (int col = 0; col < _gridSize - 1; col++) {
-            final color = _pairColor(
-              _cells[row][col].value,
-              _cells[row + 1][col + 1].value,
-            );
+            final a = _cells[row][col].value;
+            final b = _cells[row + 1][col + 1].value;
+            final color = _pairColor(a, b);
             if (color == null) continue;
-            _setBottomRight(row, col, color);
-            _setTopLeft(row + 1, col + 1, color);
+            if (updateColors) {
+              _setBottomRight(row, col, color);
+              _setTopLeft(row + 1, col + 1, color);
+            }
+            markers.add(
+              DiffMarker(
+                rowA: row,
+                colA: col,
+                rowB: row + 1,
+                colB: col + 1,
+                value: _digitDiff(a!, b!),
+              ),
+            );
           }
         }
         break;
       case CompareMode.diagonalDownLeft:
         for (int row = 0; row < _gridSize - 1; row++) {
           for (int col = 1; col < _gridSize; col++) {
-            final color = _pairColor(
-              _cells[row][col].value,
-              _cells[row + 1][col - 1].value,
-            );
+            final a = _cells[row][col].value;
+            final b = _cells[row + 1][col - 1].value;
+            final color = _pairColor(a, b);
             if (color == null) continue;
-            _setBottomLeft(row, col, color);
-            _setTopRight(row + 1, col - 1, color);
+            if (updateColors) {
+              _setBottomLeft(row, col, color);
+              _setTopRight(row + 1, col - 1, color);
+            }
+            markers.add(
+              DiffMarker(
+                rowA: row,
+                colA: col,
+                rowB: row + 1,
+                colB: col - 1,
+                value: _digitDiff(a!, b!),
+              ),
+            );
+          }
+        }
+        break;
+      case CompareMode.fixed:
+        final fixedRow = _fixedRow;
+        final fixedCol = _fixedCol;
+        if (fixedRow != null) {
+          for (int row = 0; row < _gridSize; row++) {
+            if (row == fixedRow) continue;
+            for (int col = 0; col < _gridSize; col++) {
+              final a = _cells[fixedRow][col].value;
+              final b = _cells[row][col].value;
+              final color = _pairColor(a, b);
+              if (color == null) continue;
+              if (updateColors) {
+                _setFullCell(row, col, color);
+              }
+              markers.add(
+                DiffMarker(
+                  rowA: fixedRow,
+                  colA: col,
+                  rowB: row,
+                  colB: col,
+                  value: _digitDiff(a!, b!),
+                ),
+              );
+            }
+          }
+        } else if (fixedCol != null) {
+          for (int row = 0; row < _gridSize; row++) {
+            for (int col = 0; col < _gridSize; col++) {
+              if (col == fixedCol) continue;
+              final a = _cells[row][fixedCol].value;
+              final b = _cells[row][col].value;
+              final color = _pairColor(a, b);
+              if (color == null) continue;
+              if (updateColors) {
+                _setFullCell(row, col, color);
+              }
+              markers.add(
+                DiffMarker(
+                  rowA: row,
+                  colA: fixedCol,
+                  rowB: row,
+                  colB: col,
+                  value: _digitDiff(a!, b!),
+                ),
+              );
+            }
           }
         }
         break;
     }
+    _diffMarkers = markers;
   }
 
   void _recolor() {
@@ -211,6 +340,36 @@ class _DyeGamePageState extends State<DyeGamePage> {
   void _updateThreshold(int value) {
     setState(() {
       _threshold = value;
+      _applyColoring();
+    });
+    unawaited(_saveState());
+  }
+
+  void _toggleCross3() {
+    setState(() {
+      _cross3Compare = !_cross3Compare;
+      _applyColoring();
+    });
+    unawaited(_saveState());
+  }
+
+  void _selectFixedRow(int row) {
+    setState(() {
+      _fixedRow = _fixedRow == row ? null : row;
+      if (_fixedRow != null) {
+        _fixedCol = null;
+      }
+      _applyColoring();
+    });
+    unawaited(_saveState());
+  }
+
+  void _selectFixedCol(int col) {
+    setState(() {
+      _fixedCol = _fixedCol == col ? null : col;
+      if (_fixedCol != null) {
+        _fixedRow = null;
+      }
       _applyColoring();
     });
     unawaited(_saveState());
@@ -259,6 +418,7 @@ class _DyeGamePageState extends State<DyeGamePage> {
         cell.locked = false;
         cell.colors = List<Color>.filled(4, _baseColor);
       }
+      _applyColoring(updateColors: false);
     });
     unawaited(_saveState());
   }
@@ -324,6 +484,14 @@ class _DyeGamePageState extends State<DyeGamePage> {
     final cell = _cells[row][col];
     if (cell.locked) return;
     cell.colors[3] = color;
+  }
+
+  void _setFullCell(int row, int col, Color color) {
+    final cell = _cells[row][col];
+    if (cell.locked) return;
+    for (int index = 0; index < cell.colors.length; index++) {
+      cell.colors[index] = color;
+    }
   }
 
   Future<void> _editCell(int row, int col) async {
@@ -524,12 +692,12 @@ class _DyeGamePageState extends State<DyeGamePage> {
     );
   }
 
-  Widget _compareModeButton({
-    required CompareMode mode,
+  Widget _iconOptionButton({
+    required bool selected,
+    required VoidCallback onTap,
     required IconData icon,
     required String label,
   }) {
-    final selected = _mode == mode;
     final borderColor =
         selected ? const Color(0xFF2A9D8F) : Colors.black26;
     final textColor = selected ? const Color(0xFF2A9D8F) : Colors.black54;
@@ -537,7 +705,7 @@ class _DyeGamePageState extends State<DyeGamePage> {
         selected ? const Color(0x142A9D8F) : Colors.transparent;
     return Expanded(
       child: InkWell(
-        onTap: () => _updateMode(mode),
+        onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 10),
@@ -563,6 +731,33 @@ class _DyeGamePageState extends State<DyeGamePage> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _compareModeButton({
+    required CompareMode mode,
+    required IconData icon,
+    required String label,
+  }) {
+    return _iconOptionButton(
+      selected: _mode == mode,
+      onTap: () => _updateMode(mode),
+      icon: icon,
+      label: label,
+    );
+  }
+
+  Widget _toggleOptionButton({
+    required bool selected,
+    required VoidCallback onTap,
+    required IconData icon,
+    required String label,
+  }) {
+    return _iconOptionButton(
+      selected: selected,
+      onTap: onTap,
+      icon: icon,
+      label: label,
     );
   }
 
@@ -602,6 +797,14 @@ class _DyeGamePageState extends State<DyeGamePage> {
                   minorGap: _minorGap,
                   majorGap: _majorGap,
                   cellRadius: _cellRadius,
+                  diffMarkers: _diffMarkers,
+                  showFixedSelectors: _mode == CompareMode.fixed,
+                  selectedRow: _fixedRow,
+                  selectedCol: _fixedCol,
+                  onRowSelect:
+                      _mode == CompareMode.fixed ? _selectFixedRow : null,
+                  onColSelect:
+                      _mode == CompareMode.fixed ? _selectFixedCol : null,
                   onCellTap: _editCell,
                 ),
               ),
@@ -638,76 +841,93 @@ class _DyeGamePageState extends State<DyeGamePage> {
               ),
             ),
             const SizedBox(height: 12),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            Column(
               children: [
-                Expanded(
-                  child: Row(
-                    children: [
-                      _compareModeButton(
-                        mode: CompareMode.horizontal,
-                        icon: Icons.swap_horiz,
-                        label: '横向',
-                      ),
-                      const SizedBox(width: 8),
-                      _compareModeButton(
-                        mode: CompareMode.vertical,
-                        icon: Icons.swap_vert,
-                        label: '纵向',
-                      ),
-                      const SizedBox(width: 8),
-                      _compareModeButton(
-                        mode: CompareMode.diagonalDownRight,
-                        icon: Icons.south_east,
-                        label: '斜右下',
-                      ),
-                      const SizedBox(width: 8),
-                      _compareModeButton(
-                        mode: CompareMode.diagonalDownLeft,
-                        icon: Icons.south_west,
-                        label: '斜左下',
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Column(
-                  mainAxisSize: MainAxisSize.min,
+                Row(
                   children: [
-                    OutlinedButton.icon(
-                      onPressed: _randomizeAll,
-                      icon: const Icon(Icons.casino, size: 16),
-                      label: const Text('全体随机'),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 10,
-                        ),
-                        textStyle: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        visualDensity: VisualDensity.compact,
-                      ),
+                    _compareModeButton(
+                      mode: CompareMode.horizontal,
+                      icon: Icons.swap_horiz,
+                      label: '横向',
                     ),
-                    const SizedBox(height: 8),
-                    OutlinedButton.icon(
-                      onPressed: _shiftUpAll,
-                      icon: const Icon(Icons.arrow_upward, size: 16),
-                      label: const Text('上移一行'),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 10,
-                        ),
-                        textStyle: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        visualDensity: VisualDensity.compact,
-                      ),
+                    const SizedBox(width: 8),
+                    _compareModeButton(
+                      mode: CompareMode.vertical,
+                      icon: Icons.swap_vert,
+                      label: '纵向',
+                    ),
+                    const SizedBox(width: 8),
+                    _compareModeButton(
+                      mode: CompareMode.diagonalDownRight,
+                      icon: Icons.south_east,
+                      label: '斜右下',
                     ),
                   ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    _compareModeButton(
+                      mode: CompareMode.diagonalDownLeft,
+                      icon: Icons.south_west,
+                      label: '斜左下',
+                    ),
+                    const SizedBox(width: 8),
+                    _toggleOptionButton(
+                      selected: _cross3Compare,
+                      onTap: _toggleCross3,
+                      icon: Icons.filter_3,
+                      label: '跨3比较',
+                    ),
+                    const SizedBox(width: 8),
+                    _compareModeButton(
+                      mode: CompareMode.fixed,
+                      icon: Icons.push_pin,
+                      label: '固定比较',
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _randomizeAll,
+                    icon: const Icon(Icons.casino, size: 16),
+                    label: const Text('全体随机'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 10,
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _shiftUpAll,
+                    icon: const Icon(Icons.arrow_upward, size: 16),
+                    label: const Text('上移一行'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 10,
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
                 ),
               ],
             ),

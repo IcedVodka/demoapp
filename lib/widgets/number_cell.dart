@@ -18,13 +18,15 @@ class NumberCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textColor = bestTextColor(cell.colors);
+    final effectiveRadius = radius > 0 ? radius : 0.0;
+    final clipRadius = effectiveRadius > 1 ? effectiveRadius - 1 : 0.0;
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(radius),
+        borderRadius: BorderRadius.circular(effectiveRadius),
         border: Border.all(color: Colors.black12),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(radius - 1),
+        borderRadius: BorderRadius.circular(clipRadius),
         child: Material(
           color: Colors.transparent,
           child: InkWell(
