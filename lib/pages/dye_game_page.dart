@@ -926,26 +926,27 @@ class _DyeGamePageState extends State<DyeGamePage> {
     final textColor = selected ? const Color(0xFF2A9D8F) : Colors.black54;
     final backgroundColor =
         selected ? const Color(0x142A9D8F) : Colors.transparent;
+    final borderRadius = BorderRadius.circular(10);
     return Expanded(
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: borderRadius,
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10),
+          padding: const EdgeInsets.symmetric(vertical: 6),
           decoration: BoxDecoration(
             color: backgroundColor,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: borderRadius,
             border: Border.all(color: borderColor),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 18, color: textColor),
-              const SizedBox(height: 4),
+              Icon(icon, size: 16, color: textColor),
+              const SizedBox(height: 2),
               Text(
                 label,
                 style: TextStyle(
-                  fontSize: 12,
+                  fontSize: 11,
                   fontWeight: FontWeight.w600,
                   color: textColor,
                 ),
@@ -1275,13 +1276,13 @@ class _DyeGamePageState extends State<DyeGamePage> {
     );
     return LayoutBuilder(
       builder: (context, constraints) {
-        const gap = 6.0;
+        const gap = 4.0;
         final halfGap = gap / 2;
         final maxWidth = constraints.maxWidth;
-        final cellSize = min(44.0, (maxWidth - gap * 2) / 3);
+        final cellSize = min(36.0, (maxWidth - gap * 2) / 3);
         final labelStyle = theme.textTheme.bodySmall?.copyWith(
           fontWeight: FontWeight.w600,
-          fontSize: 11,
+          fontSize: 10,
           color: Colors.black54,
         );
         return Column(
@@ -1304,10 +1305,10 @@ class _DyeGamePageState extends State<DyeGamePage> {
                 ),
               ),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 4),
             for (int row = 0; row < 4; row++)
               Padding(
-                padding: EdgeInsets.only(bottom: row == 3 ? 0 : 6),
+                padding: EdgeInsets.only(bottom: row == 3 ? 0 : 4),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: List.generate(
@@ -1399,13 +1400,6 @@ class _DyeGamePageState extends State<DyeGamePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              '锁定展示与计算',
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 12),
             Row(
               children: [
                 _iconOptionButton(
@@ -1427,7 +1421,7 @@ class _DyeGamePageState extends State<DyeGamePage> {
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             if (_lockPanelView == _LockPanelView.locked)
               _buildLockDisplayGrid()
             else
