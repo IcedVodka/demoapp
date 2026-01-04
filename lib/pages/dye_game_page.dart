@@ -9,6 +9,7 @@ import '../models/cell_data.dart';
 import '../models/compare_mode.dart';
 import '../models/diff_marker.dart';
 import '../utils/color_utils.dart';
+import '../widgets/calculation_panel.dart';
 import '../widgets/number_grid.dart';
 
 enum _LockPanelView {
@@ -717,6 +718,20 @@ class _DyeGamePageState extends State<DyeGamePage> {
     return true;
   }
 
+  void _clearAllLocks() {
+    setState(() {
+      for (final row in _cells) {
+        for (final cell in row) {
+          cell.locked = false;
+          cell.lockOrder = null;
+        }
+      }
+      _lockSequence = 0;
+      _applyColoring();
+    });
+    unawaited(_saveState());
+  }
+
   Future<void> _editCell(int row, int col) async {
     final cell = _cells[row][col];
     int? value = cell.value;
@@ -1224,7 +1239,7 @@ class _DyeGamePageState extends State<DyeGamePage> {
     return entries;
   }
 
-  _CalcResult _calculateCombinations() {
+  List<String> _calculateBaseCombinations() {
     final allowedDigits = List.generate(
       3,
       (_) => <int>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9},
@@ -1264,7 +1279,7 @@ class _DyeGamePageState extends State<DyeGamePage> {
         }
       }
     }
-    return _CalcResult(combinations: combinations);
+    return combinations;
   }
 
   Widget _buildLockDisplayGrid() {
@@ -1338,49 +1353,6 @@ class _DyeGamePageState extends State<DyeGamePage> {
     );
   }
 
-  Widget _buildCalculationView() {
-    final theme = Theme.of(context);
-    final result = _calculateCombinations();
-    final combinations = result.combinations;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          '共 ${combinations.length} 组',
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 8),
-        if (combinations.isEmpty)
-          Text(
-            '暂无符合组合',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: Colors.black54,
-            ),
-          )
-        else
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.black12),
-            ),
-            child: SizedBox(
-              height: 180,
-              child: SingleChildScrollView(
-                child: SelectableText(
-                  combinations.join(' '),
-                  style: theme.textTheme.bodySmall?.copyWith(height: 1.6),
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
   Widget _buildLockPanel() {
     final theme = Theme.of(context);
     return DecoratedBox(
@@ -1423,9 +1395,32 @@ class _DyeGamePageState extends State<DyeGamePage> {
             ),
             const SizedBox(height: 10),
             if (_lockPanelView == _LockPanelView.locked)
-              _buildLockDisplayGrid()
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _clearAllLocks,
+                      icon: const Icon(Icons.lock_open, size: 16),
+                      label: const Text('一键清空锁定'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        textStyle: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _buildLockDisplayGrid(),
+                ],
+              )
             else
-              _buildCalculationView(),
+              CalculationPanel(
+                baseCombinationsBuilder: _calculateBaseCombinations,
+              ),
           ],
         ),
       ),
@@ -1536,12 +1531,6 @@ class _LockedCellEntry {
     required this.colors,
     required this.order,
   });
-}
-
-class _CalcResult {
-  final List<String> combinations;
-
-  const _CalcResult({required this.combinations});
 }
 
 class _LockDisplayCell extends StatelessWidget {
