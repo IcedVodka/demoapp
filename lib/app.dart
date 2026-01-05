@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'pages/dye_game_page.dart';
+import 'pages/dye_game/dye_game_page.dart';
 
 class DyeGameApp extends StatelessWidget {
   const DyeGameApp({super.key});
