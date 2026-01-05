@@ -1509,49 +1509,76 @@ class _DyeGamePageState extends State<DyeGamePage> {
     );
   }
 
-  Widget _buildGridSection(double maxWidth) {
-    final size = min(maxWidth, 520.0);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Center(
-          child: SizedBox(
-            width: size,
-            height: size,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.92),
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x1A000000),
-                    blurRadius: 16,
-                    offset: Offset(0, 8),
+  double _gridTotalGap(int count) {
+    var gap = 0.0;
+    for (int i = 0; i < count - 1; i++) {
+      gap += (i + 1) % 3 == 0 ? _majorGap : _minorGap;
+    }
+    return gap;
+  }
+
+  Widget _buildGridSection() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth = constraints.maxWidth;
+        final isCompact = maxWidth < 520;
+        final padding = isCompact ? 8.0 : 12.0;
+        final cardWidth = isCompact ? maxWidth : min(maxWidth, 520.0);
+        final totalRowGap = _gridTotalGap(_rowCount);
+        final totalColGap = _gridTotalGap(_colCount);
+        final gridWidth = max(0.0, cardWidth - padding * 2);
+        final cellSize = isCompact
+            ? max(0.0, (gridWidth - totalColGap) / _colCount)
+            : 0.0;
+        final gridHeight = isCompact
+            ? max(0.0, cellSize * _rowCount + totalRowGap)
+            : cardWidth - padding * 2;
+        final cardHeight =
+            isCompact ? gridHeight + padding * 2 : cardWidth;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Align(
+              alignment: Alignment.topCenter,
+              child: SizedBox(
+                width: cardWidth,
+                height: cardHeight,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.92),
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x1A000000),
+                        blurRadius: 16,
+                        offset: Offset(0, 8),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: NumberGrid(
-                  cells: _cells,
-                  minorGap: _minorGap,
-                  majorGap: _majorGap,
-                  cellRadius: _cellRadius,
-                  diffMarkers: _diffMarkers,
-                  showFixedSelectors: _mode == CompareMode.fixed,
-                  selectedRow: _fixedRow,
-                  selectedCol: _fixedCol,
-                  onRowSelect:
-                      _mode == CompareMode.fixed ? _selectFixedRow : null,
-                  onColSelect:
-                      _mode == CompareMode.fixed ? _selectFixedCol : null,
-                  onCellTap: _editCell,
+                  child: Padding(
+                    padding: EdgeInsets.all(padding),
+                    child: NumberGrid(
+                      cells: _cells,
+                      minorGap: _minorGap,
+                      majorGap: _majorGap,
+                      cellRadius: _cellRadius,
+                      diffMarkers: _diffMarkers,
+                      showFixedSelectors: _mode == CompareMode.fixed,
+                      selectedRow: _fixedRow,
+                      selectedCol: _fixedCol,
+                      onRowSelect:
+                          _mode == CompareMode.fixed ? _selectFixedRow : null,
+                      onColSelect:
+                          _mode == CompareMode.fixed ? _selectFixedCol : null,
+                      onCellTap: _editCell,
+                    ),
+                  ),
                 ),
               ),
             ),
-          ),
-        ),
-      ],
+          ],
+        );
+      },
     );
   }
 
@@ -1574,57 +1601,6 @@ class _DyeGamePageState extends State<DyeGamePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Column(
-              children: [
-                Row(
-                  children: [
-                    _compareModeButton(
-                      mode: CompareMode.horizontal,
-                      icon: Icons.swap_horiz,
-                      label: '横向',
-                    ),
-                    const SizedBox(width: 8),
-                    _compareModeButton(
-                      mode: CompareMode.vertical,
-                      icon: Icons.swap_vert,
-                      label: '纵向',
-                    ),
-                    const SizedBox(width: 8),
-                    _compareModeButton(
-                      mode: CompareMode.diagonalDownRight,
-                      icon: Icons.south_east,
-                      label: '斜右下',
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    _compareModeButton(
-                      mode: CompareMode.diagonalDownLeft,
-                      icon: Icons.south_west,
-                      label: '斜左下',
-                    ),
-                    const SizedBox(width: 8),
-                    _toggleOptionButton(
-                      selected: _cross3Compare,
-                      onTap: _toggleCross3,
-                      icon: Icons.filter_3,
-                      label: '跨3比较',
-                    ),
-                    const SizedBox(width: 8),
-                    _compareModeButton(
-                      mode: CompareMode.fixed,
-                      icon: Icons.push_pin,
-                      label: '固定比较',
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text('染色阈值', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 6),
             Row(
               children: [
                 Expanded(
@@ -1663,6 +1639,55 @@ class _DyeGamePageState extends State<DyeGamePage> {
                 ),
               ],
             ),
+            const SizedBox(height: 12),
+            Column(
+              children: [
+                Row(
+                  children: [
+                    _compareModeButton(
+                      mode: CompareMode.horizontal,
+                      icon: Icons.swap_horiz,
+                      label: '横向',
+                    ),
+                    const SizedBox(width: 8),
+                    _compareModeButton(
+                      mode: CompareMode.vertical,
+                      icon: Icons.swap_vert,
+                      label: '纵向',
+                    ),
+                    const SizedBox(width: 8),
+                    _compareModeButton(
+                      mode: CompareMode.fixed,
+                      icon: Icons.push_pin,
+                      label: '固定比较',
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    _toggleOptionButton(
+                      selected: _cross3Compare,
+                      onTap: _toggleCross3,
+                      icon: Icons.filter_3,
+                      label: '跨3比较',
+                    ),
+                    const SizedBox(width: 8),
+                    _compareModeButton(
+                      mode: CompareMode.diagonalDownLeft,
+                      icon: Icons.south_west,
+                      label: '斜左下',
+                    ),
+                    const SizedBox(width: 8),
+                    _compareModeButton(
+                      mode: CompareMode.diagonalDownRight,
+                      icon: Icons.south_east,
+                      label: '斜右下',
+                    ),
+                  ],
+                ),
+              ],
+            ),
             const SizedBox(height: 16),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1671,11 +1696,7 @@ class _DyeGamePageState extends State<DyeGamePage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        '锁定展示',
-                        style: theme.textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 4),
                       _buildLockDisplayGrid(),
                     ],
                   ),
@@ -2028,38 +2049,45 @@ class _DyeGamePageState extends State<DyeGamePage> {
   }
 
   Widget _buildConfigPage() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final isWide = constraints.maxWidth >= 900;
-          final gridSection = _buildGridSection(
-            constraints.maxWidth,
-          );
-          final configSection = ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: _buildConfigPanel(),
-          );
-          if (isWide) {
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(child: gridSection),
-                const SizedBox(width: 24),
-                configSection,
-              ],
-            );
-          }
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              gridSection,
-              const SizedBox(height: 24),
-              configSection,
-            ],
-          );
-        },
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isCompact = constraints.maxWidth < 520;
+        final horizontalPadding = isCompact ? 12.0 : 20.0;
+        final verticalPadding = isCompact ? 16.0 : 20.0;
+        final contentMaxWidth =
+            max(0.0, constraints.maxWidth - horizontalPadding * 2);
+        final isWide = contentMaxWidth >= 900;
+        final isAndroid = Theme.of(context).platform == TargetPlatform.android;
+        final sectionGap = isAndroid ? 16.0 : 24.0;
+        final gridSection = _buildGridSection();
+        final configSection = ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: _buildConfigPanel(),
+        );
+        return SingleChildScrollView(
+          padding: EdgeInsets.symmetric(
+            horizontal: horizontalPadding,
+            vertical: verticalPadding,
+          ),
+          child: isWide
+              ? Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: gridSection),
+                    const SizedBox(width: 24),
+                    configSection,
+                  ],
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    gridSection,
+                    SizedBox(height: sectionGap),
+                    configSection,
+                  ],
+                ),
+        );
+      },
     );
   }
 
