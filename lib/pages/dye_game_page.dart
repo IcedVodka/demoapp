@@ -632,6 +632,48 @@ class _DyeGamePageState extends State<DyeGamePage> {
     return cell.colors.any((color) => color.value == target.value);
   }
 
+  String? _lockFilterSignatureForCell(CellData cell) {
+    final value = cell.value;
+    if (value == null) return null;
+    final hasRed = _cellHasTargetColor(cell, _hitColor);
+    final hasBlue = _cellHasTargetColor(cell, _missColor);
+    if (!hasRed && !hasBlue) return null;
+    final toRemove = <int>{};
+    for (int candidate = 0; candidate < 10; candidate++) {
+      final distance = _digitDiff(value, candidate);
+      if (hasRed && (distance == 4 || distance == 5)) {
+        toRemove.add(candidate);
+      }
+      if (hasBlue && (distance == 0 || distance == 1)) {
+        toRemove.add(candidate);
+      }
+    }
+    final sorted = toRemove.toList()..sort();
+    return sorted.join(',');
+  }
+
+  bool _hasDuplicateLockFilter(int columnIndex, String signature) {
+    for (int row = 0; row < _rowCount; row++) {
+      for (int col = 0; col < _colCount; col++) {
+        final cell = _cells[row][col];
+        if (!cell.locked) continue;
+        if (_digitColumnIndex(col) != columnIndex) continue;
+        final existingSignature = _lockFilterSignatureForCell(cell);
+        if (existingSignature == null) continue;
+        if (existingSignature == signature) return true;
+      }
+    }
+    return false;
+  }
+
+  String _digitColumnLabel(int columnIndex) {
+    const labels = ['百位', '十位', '个位'];
+    if (columnIndex < 0 || columnIndex >= labels.length) {
+      return '该位';
+    }
+    return labels[columnIndex];
+  }
+
   void _showSnack(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -639,6 +681,50 @@ class _DyeGamePageState extends State<DyeGamePage> {
         content: Text(message),
         duration: const Duration(milliseconds: 1600),
       ),
+    );
+  }
+
+  Future<bool> _confirmDuplicateLock(int columnIndex) async {
+    if (!mounted) return false;
+    final label = _digitColumnLabel(columnIndex);
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('重复筛选提示'),
+          content: Text('$label已存在筛选范围相同的锁定数字，是否继续锁定？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('继续'),
+            ),
+          ],
+        );
+      },
+    );
+    return result ?? false;
+  }
+
+  Future<void> _showLockColorMismatchDialog() async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('无法锁定'),
+          content: const Text('当前数字颜色不是纯色，请先统一颜色后再锁定。'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('知道了'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -881,7 +967,7 @@ class _DyeGamePageState extends State<DyeGamePage> {
     _setTopRight(row + 1, col - 1, color);
   }
 
-  bool _toggleCellLock(int row, int col, bool shouldLock) {
+  Future<bool> _toggleCellLock(int row, int col, bool shouldLock) async {
     final cell = _cells[row][col];
     if (shouldLock == cell.locked) {
       return true;
@@ -896,7 +982,7 @@ class _DyeGamePageState extends State<DyeGamePage> {
         return false;
       }
       if (!_cellHasUniformColor(cell)) {
-        _showSnack('颜色不符无法锁定');
+        await _showLockColorMismatchDialog();
         return false;
       }
       final columnIndex = _digitColumnIndex(col);
@@ -904,6 +990,12 @@ class _DyeGamePageState extends State<DyeGamePage> {
       if (lockedCount >= 4) {
         _showSnack('该位最多锁定4个数字');
         return false;
+      }
+      final signature = _lockFilterSignatureForCell(cell);
+      if (signature != null &&
+          _hasDuplicateLockFilter(columnIndex, signature)) {
+        final shouldContinue = await _confirmDuplicateLock(columnIndex);
+        if (!shouldContinue) return false;
       }
       setState(() {
         cell.locked = true;
@@ -1055,8 +1147,8 @@ class _DyeGamePageState extends State<DyeGamePage> {
                 unawaited(_saveState());
               }
 
-              void updateLocked(bool nextValue) {
-                final updated = _toggleCellLock(row, col, nextValue);
+              Future<void> updateLocked(bool nextValue) async {
+                final updated = await _toggleCellLock(row, col, nextValue);
                 if (!updated) return;
                 setInnerState(() => locked = cell.locked);
               }
@@ -1148,7 +1240,7 @@ class _DyeGamePageState extends State<DyeGamePage> {
                       const SizedBox(height: 16),
                       _optionButton(
                         selected: locked,
-                        onTap: () => updateLocked(!locked),
+                        onTap: () => unawaited(updateLocked(!locked)),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -1418,18 +1510,10 @@ class _DyeGamePageState extends State<DyeGamePage> {
   }
 
   Widget _buildGridSection(double maxWidth) {
-    final theme = Theme.of(context);
     final size = min(maxWidth, 520.0);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          '数字',
-          style: theme.textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 12),
         Center(
           child: SizedBox(
             width: size,
@@ -1490,13 +1574,6 @@ class _DyeGamePageState extends State<DyeGamePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              '配置',
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 12),
             Column(
               children: [
                 Row(
@@ -1886,7 +1963,12 @@ class _DyeGamePageState extends State<DyeGamePage> {
         const gap = 4.0;
         final halfGap = gap / 2;
         final maxWidth = constraints.maxWidth;
-        final cellSize = min(36.0, (maxWidth - gap * 2) / 3);
+        final columnCount = labels.length;
+        final availableWidth = maxWidth - gap * columnCount;
+        final double cellSize = min<double>(
+          36.0,
+          availableWidth > 0 ? availableWidth / columnCount : 0.0,
+        );
         final labelStyle = theme.textTheme.bodySmall?.copyWith(
           fontWeight: FontWeight.w600,
           fontSize: 10,
@@ -2321,6 +2403,7 @@ class _DyeGamePageState extends State<DyeGamePage> {
         ],
       ),
       bottomNavigationBar: NavigationBar(
+        height: 60,
         selectedIndex: _pageIndex,
         onDestinationSelected: (index) {
           setState(() {

@@ -234,7 +234,8 @@ class NumberGrid extends StatelessWidget {
                   child: SizedBox(
                     width: markerBoxSize,
                     height: markerBoxSize,
-                    child: Center(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
                       child: Text(
                         marker.value.toString(),
                         style: TextStyle(
@@ -261,7 +262,10 @@ class NumberGrid extends StatelessWidget {
         return SizedBox(
           width: maxWidth,
           height: maxHeight,
-          child: Stack(children: stackChildren),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: stackChildren,
+          ),
         );
       },
     );
