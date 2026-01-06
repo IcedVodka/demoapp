@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'pages/dye_game/dye_game_page.dart';
+import 'utils/color_utils.dart';
 
 class DyeGameApp extends StatelessWidget {
   const DyeGameApp({super.key});
@@ -8,7 +9,7 @@ class DyeGameApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = ColorScheme.fromSeed(
-      seedColor: const Color(0xFF2A9D8F),
+      seedColor: kSelectionColor,
       brightness: Brightness.light,
     );
     return MaterialApp(

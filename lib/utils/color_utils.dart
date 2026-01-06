@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../models/color_option.dart';
 
 const Color kBaseCellColor = Color(0xFFE0E0E0);
+const Color kSelectionColor = Color(0xFF064017);
+const Color kSelectionFillColor = Color(0x3D064017);
 
 Color bestTextColor(List<Color> colors) {
   final filtered = colors

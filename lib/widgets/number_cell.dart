@@ -9,11 +9,13 @@ class NumberCell extends StatelessWidget {
     required this.cell,
     required this.onTap,
     required this.radius,
+    this.showBall = false,
   });
 
   final CellData cell;
   final VoidCallback onTap;
   final double radius;
+  final bool showBall;
 
   @override
   Widget build(BuildContext context) {
@@ -37,24 +39,67 @@ class NumberCell extends StatelessWidget {
                 Positioned.fill(
                   child: LayoutBuilder(
                     builder: (context, constraints) {
-                      final fontSize = constraints.maxWidth * 0.42;
+                      final extent = constraints.maxWidth;
                       final label = cell.value?.toString() ?? '';
+                      final ballSize = extent * 0.62;
                       return Center(
-                        child: Text(
-                          label,
-                          style: TextStyle(
-                            fontSize: fontSize,
-                            fontWeight: FontWeight.w700,
-                            color: textColor,
-                            shadows: [
-                              Shadow(
-                                color: Colors.black.withOpacity(0.25),
-                                offset: const Offset(0, 1),
-                                blurRadius: 2,
+                        child: showBall
+                            ? Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  Container(
+                                    width: ballSize,
+                                    height: ballSize,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color:
+                                              Colors.black.withOpacity(0.12),
+                                          blurRadius: 6,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ],
+                                    ),
+                                    child: ClipOval(
+                                      child: _Quadrants(colors: cell.colors),
+                                    ),
+                                  ),
+                                  Container(
+                                    width: ballSize,
+                                    height: ballSize,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      border:
+                                          Border.all(color: Colors.black26),
+                                    ),
+                                  ),
+                                  Text(
+                                    label,
+                                    style: TextStyle(
+                                      fontSize: extent * 0.36,
+                                      fontWeight: FontWeight.w700,
+                                      color: textColor,
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : Text(
+                                label,
+                                style: TextStyle(
+                                  fontSize: extent * 0.42,
+                                  fontWeight: FontWeight.w700,
+                                  color: textColor,
+                                  shadows: [
+                                    Shadow(
+                                      color:
+                                          Colors.black.withOpacity(0.25),
+                                      offset: const Offset(0, 1),
+                                      blurRadius: 2,
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ],
-                          ),
-                        ),
                       );
                     },
                   ),

@@ -19,6 +19,7 @@ class GameConfigPanel extends StatelessWidget {
     required this.onToggleCross3,
     required this.onRandomize,
     required this.onShiftUp,
+    required this.onShiftDown,
     required this.onClearLocks,
     required this.onRecolor,
   });
@@ -33,6 +34,7 @@ class GameConfigPanel extends StatelessWidget {
   final VoidCallback onToggleCross3;
   final VoidCallback onRandomize;
   final VoidCallback onShiftUp;
+  final VoidCallback onShiftDown;
   final VoidCallback onClearLocks;
   final VoidCallback onRecolor;
 
@@ -66,11 +68,10 @@ class GameConfigPanel extends StatelessWidget {
     required IconData icon,
     required String label,
   }) {
-    final borderColor =
-        selected ? const Color(0xFF2A9D8F) : Colors.black26;
-    final textColor = selected ? const Color(0xFF2A9D8F) : Colors.black54;
+    final borderColor = selected ? kSelectionColor : Colors.black26;
+    final textColor = selected ? kSelectionColor : Colors.black54;
     final backgroundColor =
-        selected ? const Color(0x142A9D8F) : Colors.transparent;
+        selected ? kSelectionFillColor : Colors.transparent;
     final borderRadius = BorderRadius.circular(10);
     return Expanded(
       child: InkWell(
@@ -99,6 +100,29 @@ class GameConfigPanel extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _thresholdStepButton({
+    required IconData icon,
+    required VoidCallback? onTap,
+  }) {
+    final isEnabled = onTap != null;
+    final borderColor = isEnabled ? Colors.black45 : Colors.black26;
+    final iconColor = isEnabled ? Colors.black87 : Colors.black38;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: borderColor),
+        ),
+        child: Icon(icon, size: 16, color: iconColor),
       ),
     );
   }
@@ -227,37 +251,63 @@ class GameConfigPanel extends StatelessWidget {
           children: [
             Row(
               children: [
+                _thresholdStepButton(
+                  icon: Icons.remove,
+                  onTap:
+                      threshold > 0 ? () => onThresholdChanged(threshold - 1) : null,
+                ),
+                const SizedBox(width: 8),
                 Expanded(
-                  child: Slider(
-                    value: threshold.toDouble(),
-                    min: 0,
-                    max: 5,
-                    divisions: 5,
-                    label: threshold.toString(),
-                    onChanged: (value) {
-                      onThresholdChanged(value.round());
-                    },
+                  child: Container(
+                    height: 32,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: Colors.black12,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.black26),
+                    ),
+                    child: Text(
+                      '阈值 $threshold',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                      ),
+                    ),
                   ),
+                ),
+                const SizedBox(width: 8),
+                _thresholdStepButton(
+                  icon: Icons.add,
+                  onTap:
+                      threshold < 5 ? () => onThresholdChanged(threshold + 1) : null,
                 ),
                 const SizedBox(width: 8),
                 InkWell(
                   onTap: onRecolor,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(10),
                   child: Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
+                      horizontal: 10,
                       vertical: 8,
                     ),
                     decoration: BoxDecoration(
                       color: Colors.black87,
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                    child: Text(
-                      threshold.toString(),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: const [
+                        Icon(Icons.refresh, size: 14, color: Colors.white),
+                        SizedBox(width: 4),
+                        Text(
+                          '重染',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -269,9 +319,9 @@ class GameConfigPanel extends StatelessWidget {
                 Row(
                   children: [
                     _compareModeButton(
-                      mode: CompareMode.horizontal,
-                      icon: Icons.swap_horiz,
-                      label: '横向',
+                      mode: CompareMode.fixed,
+                      icon: Icons.push_pin,
+                      label: '固定',
                     ),
                     const SizedBox(width: 8),
                     _compareModeButton(
@@ -280,33 +330,33 @@ class GameConfigPanel extends StatelessWidget {
                       label: '纵向',
                     ),
                     const SizedBox(width: 8),
-                    _compareModeButton(
-                      mode: CompareMode.fixed,
-                      icon: Icons.push_pin,
-                      label: '固定比较',
+                    _toggleOptionButton(
+                      selected: cross3Compare,
+                      onTap: onToggleCross3,
+                      icon: Icons.filter_3,
+                      label: '跨3',
                     ),
                   ],
                 ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    _toggleOptionButton(
-                      selected: cross3Compare,
-                      onTap: onToggleCross3,
-                      icon: Icons.filter_3,
-                      label: '跨3比较',
+                    _compareModeButton(
+                      mode: CompareMode.horizontal,
+                      icon: Icons.swap_horiz,
+                      label: '横向',
                     ),
                     const SizedBox(width: 8),
                     _compareModeButton(
                       mode: CompareMode.diagonalDownLeft,
                       icon: Icons.south_west,
-                      label: '斜左下',
+                      label: '左斜',
                     ),
                     const SizedBox(width: 8),
                     _compareModeButton(
                       mode: CompareMode.diagonalDownRight,
                       icon: Icons.south_east,
-                      label: '斜右下',
+                      label: '右斜',
                     ),
                   ],
                 ),
@@ -350,6 +400,22 @@ class GameConfigPanel extends StatelessWidget {
                         onPressed: onShiftUp,
                         icon: const Icon(Icons.arrow_upward, size: 16),
                         label: const Text('上移一行'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 12,
+                          ),
+                          textStyle: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: onShiftDown,
+                        icon: const Icon(Icons.arrow_downward, size: 16),
+                        label: const Text('下移一行'),
                         style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(
                             vertical: 12,

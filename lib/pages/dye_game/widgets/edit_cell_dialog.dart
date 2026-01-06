@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../models/cell_data.dart';
+import '../../../utils/color_utils.dart';
 
 class EditCellDialog extends StatefulWidget {
   const EditCellDialog({
@@ -80,10 +81,9 @@ class _EditCellDialogState extends State<EditCellDialog> {
       vertical: 8,
     ),
   }) {
-    final borderColor =
-        selected ? const Color(0xFF2A9D8F) : Colors.black26;
+    final borderColor = selected ? kSelectionColor : Colors.black26;
     final backgroundColor =
-        selected ? const Color(0x142A9D8F) : Colors.transparent;
+        selected ? kSelectionFillColor : Colors.transparent;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),
@@ -127,106 +127,144 @@ class _EditCellDialogState extends State<EditCellDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text('${widget.title}（${widget.row + 1}, ${widget.col + 1}）'),
-      content: SizedBox(
-        width: 360,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('数字'),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _optionButton(
-                    selected: _value == null,
-                    onTap: () => _updateValue(null),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    child: const Text('空'),
-                  ),
-                  ...List.generate(
-                    10,
-                    (index) => _optionButton(
-                      selected: _value == index,
-                      onTap: () => _updateValue(index),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
+    final theme = Theme.of(context);
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.92),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x1A000000),
+              blurRadius: 16,
+              offset: Offset(0, -6),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 360),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 36,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.black26,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
                       ),
-                      child: Text(index.toString()),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              const Text('颜色'),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _optionButton(
-                    selected: _isColorSelected(widget.hitColor),
-                    onTap: () => _updateColors(widget.hitColor),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _colorIcon(widget.hitColor),
-                        const SizedBox(width: 6),
-                        const Text('红'),
-                      ],
-                    ),
-                  ),
-                  _optionButton(
-                    selected: _isColorSelected(widget.missColor),
-                    onTap: () => _updateColors(widget.missColor),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _colorIcon(widget.missColor),
-                        const SizedBox(width: 6),
-                        const Text('蓝'),
-                      ],
-                    ),
-                  ),
-                  _optionButton(
-                    selected: _isColorSelected(widget.baseColor),
-                    onTap: () => _updateColors(widget.baseColor),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _colorIcon(widget.baseColor, showClear: true),
-                        const SizedBox(width: 6),
-                        const Text('清空'),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              if (widget.showLockToggle && widget.onToggleLock != null)
-                _optionButton(
-                  selected: _locked,
-                  onTap: () => _updateLocked(),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        _locked ? Icons.lock : Icons.lock_open,
-                        size: 16,
+                    const SizedBox(height: 10),
+                    Text(
+                      '${widget.title}（${widget.row + 1}, ${widget.col + 1}）',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
                       ),
-                      const SizedBox(width: 6),
-                      Text(_locked ? '已锁定' : '未锁定'),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text('数字'),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _optionButton(
+                          selected: _value == null,
+                          onTap: () => _updateValue(null),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          child: const Text('空'),
+                        ),
+                        ...List.generate(
+                          10,
+                          (index) => _optionButton(
+                            selected: _value == index,
+                            onTap: () => _updateValue(index),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            child: Text(index.toString()),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    const Text('颜色'),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _optionButton(
+                          selected: _isColorSelected(widget.hitColor),
+                          onTap: () => _updateColors(widget.hitColor),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _colorIcon(widget.hitColor),
+                              const SizedBox(width: 6),
+                              const Text('红'),
+                            ],
+                          ),
+                        ),
+                        _optionButton(
+                          selected: _isColorSelected(widget.missColor),
+                          onTap: () => _updateColors(widget.missColor),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _colorIcon(widget.missColor),
+                              const SizedBox(width: 6),
+                              const Text('蓝'),
+                            ],
+                          ),
+                        ),
+                        _optionButton(
+                          selected: _isColorSelected(widget.baseColor),
+                          onTap: () => _updateColors(widget.baseColor),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _colorIcon(widget.baseColor, showClear: true),
+                              const SizedBox(width: 6),
+                              const Text('清空'),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    if (widget.showLockToggle && widget.onToggleLock != null)
+                      _optionButton(
+                        selected: _locked,
+                        onTap: () => _updateLocked(),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              _locked ? Icons.lock : Icons.lock_open,
+                              size: 16,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(_locked ? '已锁定' : '未锁定'),
+                          ],
+                        ),
+                      ),
+                  ],
                 ),
-            ],
+              ),
+            ),
           ),
         ),
       ),

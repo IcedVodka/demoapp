@@ -5,6 +5,11 @@ class _DyeGamePageState extends State<DyeGamePage> {
   static const int _colCount = 6;
   static const double _minorGap = 0;
   static const double _majorGap = 14;
+  static const Set<int> _rowGapOverrides = {2, 5};
+  static const int _summaryCount = 2;
+  static const double _summaryScale = 0.62;
+  static const double _summaryGap = 8;
+  static const double _summaryItemGap = 6;
   static const double _cellRadius = 0;
   static const int _customRowCount = 10;
   static const int _customColCount = 3;
@@ -423,6 +428,44 @@ class _DyeGamePageState extends State<DyeGamePage> {
       }
       for (int col = 0; col < _colCount; col++) {
         final cell = _cells[_rowCount - 1][col];
+        cell.value = null;
+        cell.locked = false;
+        cell.lockOrder = null;
+        cell.colors = List<Color>.filled(4, _baseColor);
+      }
+      _applyColoring(updateColors: false);
+    });
+    unawaited(_saveState());
+  }
+
+  void _shiftDownAll() {
+    setState(() {
+      final snapshot = _cells
+          .map(
+            (row) => row
+                .map(
+                  (cell) => CellData(
+                    value: cell.value,
+                    colors: List<Color>.from(cell.colors),
+                    locked: cell.locked,
+                    lockOrder: cell.lockOrder,
+                  ),
+                )
+                .toList(),
+          )
+          .toList();
+      for (int row = _rowCount - 1; row > 0; row--) {
+        for (int col = 0; col < _colCount; col++) {
+          final source = snapshot[row - 1][col];
+          final target = _cells[row][col];
+          target.value = source.value;
+          target.colors = List<Color>.from(source.colors);
+          target.locked = source.locked;
+          target.lockOrder = source.lockOrder;
+        }
+      }
+      for (int col = 0; col < _colCount; col++) {
+        final cell = _cells[0][col];
         cell.value = null;
         cell.locked = false;
         cell.lockOrder = null;
@@ -936,28 +979,33 @@ class _DyeGamePageState extends State<DyeGamePage> {
 
   Future<void> _editCell(int row, int col) async {
     final cell = _cells[row][col];
-    await showDialog<void>(
+    await showModalBottomSheet<void>(
       context: context,
-      barrierDismissible: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withOpacity(0.2),
       builder: (context) {
-        return EditCellDialog(
-          cell: cell,
-          row: row,
-          col: col,
-          title: '编辑自定义格子',
-          hitColor: _hitColor,
-          missColor: _missColor,
-          baseColor: _baseColor,
-          onValueChanged: (nextValue) {
-            setState(() => cell.value = nextValue);
-            unawaited(_saveState());
-          },
-          onColorChanged: (nextColor) {
-            final nextColors = List<Color>.filled(4, nextColor);
-            setState(() => cell.colors = List<Color>.from(nextColors));
-            unawaited(_saveState());
-          },
-          onToggleLock: (shouldLock) => _toggleCellLock(row, col, shouldLock),
+        return FractionallySizedBox(
+          heightFactor: 0.55,
+          child: EditCellDialog(
+            cell: cell,
+            row: row,
+            col: col,
+            title: '编辑自定义格子',
+            hitColor: _hitColor,
+            missColor: _missColor,
+            baseColor: _baseColor,
+            onValueChanged: (nextValue) {
+              setState(() => cell.value = nextValue);
+              unawaited(_saveState());
+            },
+            onColorChanged: (nextColor) {
+              final nextColors = List<Color>.filled(4, nextColor);
+              setState(() => cell.colors = List<Color>.from(nextColors));
+              unawaited(_saveState());
+            },
+            onToggleLock: (shouldLock) => _toggleCellLock(row, col, shouldLock),
+          ),
         );
       },
     );
@@ -965,36 +1013,67 @@ class _DyeGamePageState extends State<DyeGamePage> {
 
   Future<void> _editCustomCell(int row, int col) async {
     final cell = _customCells[row][col];
-    await showDialog<void>(
+    await showModalBottomSheet<void>(
       context: context,
-      barrierDismissible: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withOpacity(0.2),
       builder: (context) {
-        return EditCellDialog(
-          cell: cell,
-          row: row,
-          col: col,
-          hitColor: _hitColor,
-          missColor: _missColor,
-          baseColor: _baseColor,
-          showLockToggle: false,
-          onValueChanged: (nextValue) {
-            setState(() => cell.value = nextValue);
-            unawaited(_saveState());
-          },
-          onColorChanged: (nextColor) {
-            final nextColors = List<Color>.filled(4, nextColor);
-            setState(() => cell.colors = List<Color>.from(nextColors));
-            unawaited(_saveState());
-          },
+        return FractionallySizedBox(
+          heightFactor: 0.55,
+          child: EditCellDialog(
+            cell: cell,
+            row: row,
+            col: col,
+            hitColor: _hitColor,
+            missColor: _missColor,
+            baseColor: _baseColor,
+            showLockToggle: false,
+            onValueChanged: (nextValue) {
+              setState(() => cell.value = nextValue);
+              unawaited(_saveState());
+            },
+            onColorChanged: (nextColor) {
+              final nextColors = List<Color>.filled(4, nextColor);
+              setState(() => cell.colors = List<Color>.from(nextColors));
+              unawaited(_saveState());
+            },
+          ),
         );
       },
     );
   }
 
-  double _gridTotalGap(int count) {
+  int? _sumRowGroup(int row, int startCol) {
+    var sum = 0;
+    for (int offset = 0; offset < 3; offset++) {
+      final value = _cells[row][startCol + offset].value;
+      if (value == null) return null;
+      sum += value;
+    }
+    return sum;
+  }
+
+  List<List<String>> _buildRowSummaries() {
+    final summaries = <List<String>>[];
+    for (int row = 0; row < _rowCount; row++) {
+      final first = _sumRowGroup(row, 0);
+      final second = _sumRowGroup(row, 3);
+      summaries.add([
+        first?.toString() ?? '',
+        second?.toString() ?? '',
+      ]);
+    }
+    return summaries;
+  }
+
+  double _gridTotalGap(int count, {Set<int> gapOverrides = const {}}) {
     var gap = 0.0;
     for (int i = 0; i < count - 1; i++) {
-      gap += (i + 1) % 3 == 0 ? _majorGap : _minorGap;
+      final isMajor = (i + 1) % 3 == 0;
+      gap += gapOverrides.contains(i)
+          ? _minorGap
+          : (isMajor ? _majorGap : _minorGap);
     }
     return gap;
   }
@@ -1006,17 +1085,29 @@ class _DyeGamePageState extends State<DyeGamePage> {
         final isCompact = maxWidth < 520;
         final padding = isCompact ? 8.0 : 12.0;
         final cardWidth = isCompact ? maxWidth : min(maxWidth, 520.0);
-        final totalRowGap = _gridTotalGap(_rowCount);
+        final totalRowGap =
+            _gridTotalGap(_rowCount, gapOverrides: _rowGapOverrides);
         final totalColGap = _gridTotalGap(_colCount);
         final gridWidth = max(0.0, cardWidth - padding * 2);
+        final summaryOuterGap = _summaryCount > 0 ? _summaryGap : 0.0;
+        final summaryInnerGap =
+            _summaryCount > 1 ? _summaryItemGap * (_summaryCount - 1) : 0.0;
+        final widthBudget = max(
+          0.0,
+          gridWidth - totalColGap - summaryOuterGap - summaryInnerGap,
+        );
+        final widthBasedCellSize = _summaryCount > 0
+            ? widthBudget / (_colCount + _summaryCount * _summaryScale)
+            : widthBudget / _colCount;
         final cellSize = isCompact
-            ? max(0.0, (gridWidth - totalColGap) / _colCount)
+            ? max(0.0, widthBasedCellSize)
             : 0.0;
         final gridHeight = isCompact
             ? max(0.0, cellSize * _rowCount + totalRowGap)
             : cardWidth - padding * 2;
         final cardHeight =
             isCompact ? gridHeight + padding * 2 : cardWidth;
+        final rowSummaries = _buildRowSummaries();
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1044,6 +1135,12 @@ class _DyeGamePageState extends State<DyeGamePage> {
                       minorGap: _minorGap,
                       majorGap: _majorGap,
                       cellRadius: _cellRadius,
+                      rowGapOverrides: _rowGapOverrides,
+                      rowSummaries: rowSummaries,
+                      summaryScale: _summaryScale,
+                      summaryGap: _summaryGap,
+                      summaryItemGap: _summaryItemGap,
+                      showBall: true,
                       diffMarkers: _diffMarkers,
                       showFixedSelectors: _mode == CompareMode.fixed,
                       selectedRow: _fixedRow,
@@ -1097,6 +1194,7 @@ class _DyeGamePageState extends State<DyeGamePage> {
             onToggleCross3: _toggleCross3,
             onRandomize: _randomizeAll,
             onShiftUp: _shiftUpAll,
+            onShiftDown: _shiftDownAll,
             onClearLocks: _clearAllLocks,
             onRecolor: _recolor,
           ),
@@ -1204,10 +1302,9 @@ class _DyeGamePageState extends State<DyeGamePage> {
     required VoidCallback onTap,
     required Widget child,
   }) {
-    final borderColor =
-        selected ? const Color(0xFF2A9D8F) : Colors.black26;
+    final borderColor = selected ? kSelectionColor : Colors.black26;
     final backgroundColor =
-        selected ? const Color(0x142A9D8F) : Colors.transparent;
+        selected ? kSelectionFillColor : Colors.transparent;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),

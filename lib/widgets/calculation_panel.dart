@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../utils/color_utils.dart';
+
 class CalculationPanel extends StatefulWidget {
   const CalculationPanel({
     super.key,
@@ -522,11 +524,10 @@ class CalculationPanelState extends State<CalculationPanel> {
     required String label,
     required VoidCallback onTap,
   }) {
-    final borderColor =
-        selected ? const Color(0xFF2A9D8F) : Colors.black26;
+    final borderColor = selected ? kSelectionColor : Colors.black26;
     final backgroundColor =
-        selected ? const Color(0x142A9D8F) : Colors.transparent;
-    final textColor = selected ? const Color(0xFF2A9D8F) : Colors.black87;
+        selected ? kSelectionFillColor : Colors.transparent;
+    final textColor = selected ? kSelectionColor : Colors.black87;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),
@@ -603,16 +604,16 @@ class CalculationPanelState extends State<CalculationPanel> {
   Widget build(BuildContext context) {
     const divider = Divider(height: 20, color: Colors.black12);
     const sizeOptions = [
-      _Option(_SizePattern.big3, '3大'),
-      _Option(_SizePattern.small1big2, '1小2大'),
-      _Option(_SizePattern.small2big1, '2小1大'),
       _Option(_SizePattern.small3, '3小'),
+      _Option(_SizePattern.small2big1, '2小'),
+      _Option(_SizePattern.small1big2, '1小'),
+      _Option(_SizePattern.big3, '0小'),
     ];
     const parityOptions = [
       _Option(_ParityPattern.odd3, '3奇'),
-      _Option(_ParityPattern.odd1even2, '1奇2偶'),
-      _Option(_ParityPattern.odd2even1, '2奇1偶'),
-      _Option(_ParityPattern.even3, '3偶'),
+      _Option(_ParityPattern.odd2even1, '2奇'),
+      _Option(_ParityPattern.odd1even2, '1奇'),
+      _Option(_ParityPattern.even3, '0奇'),
     ];
     const shapeOptions = [
       _Option(_ShapePattern.concave, '凹型'),
@@ -622,9 +623,9 @@ class CalculationPanelState extends State<CalculationPanel> {
       _Option(_ShapePattern.leaning, '偏型'),
     ];
     const consecutiveOptions = [
-      _Option(_ConsecutivePattern.two, '两联'),
-      _Option(_ConsecutivePattern.three, '三联'),
-      _Option(_ConsecutivePattern.none, '无联'),
+      _Option(_ConsecutivePattern.none, '0'),
+      _Option(_ConsecutivePattern.two, '2'),
+      _Option(_ConsecutivePattern.three, '3'),
     ];
 
     return Column(
@@ -666,7 +667,6 @@ class CalculationPanelState extends State<CalculationPanel> {
         const SizedBox(height: 16),
         _section(
           title: '必选',
-          subtitle: '组合需包含任意勾选数字',
           child: Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -715,7 +715,6 @@ class CalculationPanelState extends State<CalculationPanel> {
         divider,
         _section(
           title: '小大',
-          subtitle: '0-4为小，5-9为大',
           child: Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -733,7 +732,6 @@ class CalculationPanelState extends State<CalculationPanel> {
         divider,
         _section(
           title: '012路',
-          subtitle: '填写后要求三个数字之和为3',
           child: Row(
             children: [
               _routeField('0路', _route0Controller),
@@ -797,7 +795,7 @@ class CalculationPanelState extends State<CalculationPanel> {
         ),
         divider,
         _section(
-          title: '联数',
+          title: '连数',
           child: Wrap(
             spacing: 8,
             runSpacing: 8,

@@ -14,6 +14,12 @@ class NumberGrid extends StatelessWidget {
     required this.minorGap,
     required this.majorGap,
     required this.cellRadius,
+    this.rowGapOverrides = const {},
+    this.rowSummaries,
+    this.summaryScale = 0.62,
+    this.summaryGap = 8,
+    this.summaryItemGap = 6,
+    this.showBall = false,
     this.diffMarkers = const [],
     this.showFixedSelectors = false,
     this.selectedRow,
@@ -27,6 +33,12 @@ class NumberGrid extends StatelessWidget {
   final double minorGap;
   final double majorGap;
   final double cellRadius;
+  final Set<int> rowGapOverrides;
+  final List<List<String>>? rowSummaries;
+  final double summaryScale;
+  final double summaryGap;
+  final double summaryItemGap;
+  final bool showBall;
   final List<DiffMarker> diffMarkers;
   final bool showFixedSelectors;
   final int? selectedRow;
@@ -34,22 +46,25 @@ class NumberGrid extends StatelessWidget {
   final void Function(int row)? onRowSelect;
   final void Function(int col)? onColSelect;
 
-  double _gapAfterIndex(int index) {
+  double _gapAfterIndex(int index, {required bool isRow}) {
+    if (isRow && rowGapOverrides.contains(index)) {
+      return minorGap;
+    }
     return (index + 1) % 3 == 0 ? majorGap : minorGap;
   }
 
-  double _gapBeforeIndex(int index) {
+  double _gapBeforeIndex(int index, {required bool isRow}) {
     var gap = 0.0;
     for (int i = 0; i < index; i++) {
-      gap += _gapAfterIndex(i);
+      gap += _gapAfterIndex(i, isRow: isRow);
     }
     return gap;
   }
 
-  double _totalGap(int count) {
+  double _totalGap(int count, {required bool isRow}) {
     var gap = 0.0;
     for (int i = 0; i < count - 1; i++) {
-      gap += _gapAfterIndex(i);
+      gap += _gapAfterIndex(i, isRow: isRow);
     }
     return gap;
   }
@@ -77,32 +92,59 @@ class NumberGrid extends StatelessWidget {
             : 0.0;
         final gridOffset =
             showFixedSelectors ? selectorExtent + selectorGap : 0.0;
-        final gridWidth = maxWidth - gridOffset;
-        final gridHeight = maxHeight - gridOffset;
-        final totalRowGap = _totalGap(rowCount);
-        final totalColGap = _totalGap(colCount);
-        final safeGridWidth = max(0.0, gridWidth - totalColGap);
-        final safeGridHeight = max(0.0, gridHeight - totalRowGap);
-        final cellSize = min(
-          safeGridWidth / colCount,
-          safeGridHeight / rowCount,
-        );
+        final availableWidth = maxWidth - gridOffset;
+        final availableHeight = maxHeight - gridOffset;
+        final totalRowGap = _totalGap(rowCount, isRow: true);
+        final totalColGap = _totalGap(colCount, isRow: false);
+        final summarySource = rowSummaries;
+        final summaryCount = summarySource == null || summarySource.isEmpty
+            ? 0
+            : summarySource.first.length;
+        final summaryEnabled = summaryCount > 0;
+        final summaryOuterGap = summaryEnabled ? summaryGap : 0.0;
+        final summaryInnerGap =
+            summaryEnabled ? summaryItemGap * (summaryCount - 1) : 0.0;
+        final widthBudget = summaryEnabled
+            ? max(
+                0.0,
+                availableWidth - totalColGap - summaryOuterGap - summaryInnerGap,
+              )
+            : max(0.0, availableWidth - totalColGap);
+        final widthBasedCellSize = summaryEnabled
+            ? widthBudget / (colCount + summaryCount * summaryScale)
+            : widthBudget / colCount;
+        final heightBudget = max(0.0, availableHeight - totalRowGap);
+        final heightBasedCellSize = heightBudget / rowCount;
+        final cellSize = min(widthBasedCellSize, heightBasedCellSize);
         final actualGridWidth = cellSize * colCount + totalColGap;
         final actualGridHeight = cellSize * rowCount + totalRowGap;
-        final extraX = (gridWidth - actualGridWidth) / 2;
-        final extraY = (gridHeight - actualGridHeight) / 2;
+        final summaryCellSize =
+            summaryEnabled ? cellSize * summaryScale : 0.0;
+        final summaryWidth = summaryEnabled
+            ? summaryCount * summaryCellSize +
+                summaryItemGap * (summaryCount - 1)
+            : 0.0;
+        final contentWidth = actualGridWidth +
+            (summaryEnabled ? summaryOuterGap + summaryWidth : 0.0);
+        final extraX = (availableWidth - contentWidth) / 2;
+        final extraY = (availableHeight - actualGridHeight) / 2;
         final gridStartX = gridOffset + max(0.0, extraX);
         final gridStartY = gridOffset + max(0.0, extraY);
+        final summaryStartX = gridStartX + actualGridWidth + summaryOuterGap;
         final markerFontSize = (cellSize * 0.22).clamp(9.0, 14.0);
         final markerBoxSize = (cellSize * 0.34).clamp(10.0, 18.0);
         final selectorColor = Theme.of(context).colorScheme.primary;
 
         double cellStartX(int col) {
-          return gridStartX + col * cellSize + _gapBeforeIndex(col);
+          return gridStartX +
+              col * cellSize +
+              _gapBeforeIndex(col, isRow: false);
         }
 
         double cellStartY(int row) {
-          return gridStartY + row * cellSize + _gapBeforeIndex(row);
+          return gridStartY +
+              row * cellSize +
+              _gapBeforeIndex(row, isRow: true);
         }
 
         double cellCenterX(int col) => cellStartX(col) + cellSize / 2;
@@ -120,7 +162,8 @@ class NumberGrid extends StatelessWidget {
               final targetCol = colA == selectedCol ? colB : colA;
               final boundaryIndex =
                   targetCol < selectedCol! ? targetCol : targetCol - 1;
-              final gapWidth = _gapAfterIndex(boundaryIndex);
+              final gapWidth =
+                  _gapAfterIndex(boundaryIndex, isRow: false);
               final leftOfNext = cellStartX(boundaryIndex + 1);
               return Offset(leftOfNext - gapWidth / 2, cellCenterY(rowA));
             }
@@ -130,7 +173,7 @@ class NumberGrid extends StatelessWidget {
               final targetRow = rowA == selectedRow ? rowB : rowA;
               final boundaryIndex =
                   targetRow < selectedRow! ? targetRow : targetRow - 1;
-              final gapHeight = _gapAfterIndex(boundaryIndex);
+              final gapHeight = _gapAfterIndex(boundaryIndex, isRow: true);
               final topOfNext = cellStartY(boundaryIndex + 1);
               return Offset(cellCenterX(colA), topOfNext - gapHeight / 2);
             }
@@ -138,14 +181,14 @@ class NumberGrid extends StatelessWidget {
           if (rowDiff == 0 && (colDiff == 1 || colDiff == 3)) {
             final minCol = min(colA, colB);
             final boundaryIndex = minCol;
-            final gapWidth = _gapAfterIndex(boundaryIndex);
+            final gapWidth = _gapAfterIndex(boundaryIndex, isRow: false);
             final leftOfNext = cellStartX(boundaryIndex + 1);
             return Offset(leftOfNext - gapWidth / 2, cellCenterY(rowA));
           }
           if (colDiff == 0 && (rowDiff == 1 || rowDiff == 3)) {
             final minRow = min(rowA, rowB);
             final boundaryIndex = minRow;
-            final gapHeight = _gapAfterIndex(boundaryIndex);
+            final gapHeight = _gapAfterIndex(boundaryIndex, isRow: true);
             final topOfNext = cellStartY(boundaryIndex + 1);
             return Offset(cellCenterX(colA), topOfNext - gapHeight / 2);
           }
@@ -223,6 +266,30 @@ class NumberGrid extends StatelessWidget {
           }
         }
 
+        if (summaryEnabled) {
+          for (int row = 0; row < rowCount; row++) {
+            final rowSummary = summarySource != null && row < summarySource.length
+                ? summarySource[row]
+                : const <String>[];
+            for (int index = 0; index < summaryCount; index++) {
+              final label = index < rowSummary.length ? rowSummary[index] : '';
+              stackChildren.add(
+                Positioned(
+                  left: summaryStartX +
+                      index * (summaryCellSize + summaryItemGap),
+                  top: cellStartY(row) + (cellSize - summaryCellSize) / 2,
+                  child: IgnorePointer(
+                    child: _SummaryCell(
+                      label: label,
+                      size: summaryCellSize,
+                    ),
+                  ),
+                ),
+              );
+            }
+          }
+        }
+
         if (diffMarkers.isNotEmpty) {
           for (final marker in diffMarkers) {
             final center = markerCenter(marker);
@@ -283,12 +350,15 @@ class NumberGrid extends StatelessWidget {
             child: NumberCell(
               cell: cells[row][col],
               radius: cellRadius,
+              showBall: showBall,
               onTap: () => onCellTap(row, col),
             ),
           ),
         );
         if (col != cells[row].length - 1) {
-          rowChildren.add(SizedBox(width: _gapAfterIndex(col)));
+          rowChildren.add(
+            SizedBox(width: _gapAfterIndex(col, isRow: false)),
+          );
         }
       }
       rows.add(
@@ -298,9 +368,45 @@ class NumberGrid extends StatelessWidget {
         ),
       );
       if (row != cells.length - 1) {
-        rows.add(SizedBox(height: _gapAfterIndex(row)));
+        rows.add(SizedBox(height: _gapAfterIndex(row, isRow: true)));
       }
     }
     return Column(children: rows);
+  }
+}
+
+class _SummaryCell extends StatelessWidget {
+  const _SummaryCell({
+    required this.label,
+    required this.size,
+  });
+
+  final String label;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final fontSize = size * 0.46;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.9),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.black26),
+        ),
+        child: Center(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: fontSize,
+              fontWeight: FontWeight.w700,
+              color: Colors.black87,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
