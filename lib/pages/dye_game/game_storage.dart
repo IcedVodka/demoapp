@@ -13,9 +13,8 @@ class GameStorage {
   static const String _storageKey = 'dye_game_state_v2';
   static const int _rowCount = 9;
   static const int _colCount = 6;
-  static const int _customRowCount = 10;
-  static const int _customColCount = 3;
-  static const RowPattern _defaultRowPattern = RowPattern.red2blue1;
+  static const int _groupCount = 2;
+  static const RowPattern _defaultRowPattern = RowPattern.none;
 
   static Future<Map<String, dynamic>?> load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -34,16 +33,7 @@ class GameStorage {
     );
     if (cells == null) return null;
 
-    final customCells = _parseCells(
-      decoded['customCells'],
-      rows: _customRowCount,
-      cols: _customColCount,
-      baseColor: kBaseCellColor,
-      includeLock: false,
-      strictColors: false,
-    );
-
-    final customPatterns = _parsePatterns(decoded['customPatterns']);
+    final groupPatterns = _parseGroupPatterns(decoded['groupPatterns']);
 
     CompareMode? mode;
     final modeName = decoded['mode'];
@@ -79,8 +69,7 @@ class GameStorage {
 
     return {
       'cells': cells,
-      'customCells': customCells,
-      'customPatterns': customPatterns,
+      'groupPatterns': groupPatterns,
       'mode': mode,
       'threshold': threshold,
       'cross3Compare': cross3Compare,
@@ -91,8 +80,7 @@ class GameStorage {
 
   static Future<void> save({
     required List<List<CellData>> cells,
-    required List<List<CellData>> customCells,
-    required List<RowPattern> customPatterns,
+    required List<List<RowPattern>> groupPatterns,
     required CompareMode mode,
     required int threshold,
     required bool cross3Compare,
@@ -120,20 +108,11 @@ class GameStorage {
                 .toList(),
           )
           .toList(),
-      'customCells': customCells
+      'groupPatterns': groupPatterns
           .map(
-            (row) => row
-                .map(
-                  (cell) => {
-                    'value': cell.value,
-                    'colors': cell.colors.map((color) => color.value).toList(),
-                  },
-                )
-                .toList(),
+            (row) => row.map((pattern) => pattern.name).toList(),
           )
           .toList(),
-      'customPatterns':
-          customPatterns.map((pattern) => pattern.name).toList(),
     };
     await prefs.setString(_storageKey, jsonEncode(data));
   }
@@ -190,23 +169,27 @@ class GameStorage {
     return parsed;
   }
 
-  static List<RowPattern>? _parsePatterns(dynamic data) {
-    if (data is! List) return null;
-    final parsedPatterns = List<RowPattern>.filled(
-      _customRowCount,
-      _defaultRowPattern,
+  static List<List<RowPattern>> _parseGroupPatterns(dynamic data) {
+    final parsed = List<List<RowPattern>>.generate(
+      _rowCount,
+      (_) => List<RowPattern>.filled(_groupCount, _defaultRowPattern),
     );
-    final count = min(data.length, _customRowCount);
-    for (int index = 0; index < count; index++) {
-      final name = data[index];
-      if (name is String) {
+    if (data is! List) return parsed;
+    final rowCount = min(data.length, _rowCount);
+    for (int row = 0; row < rowCount; row++) {
+      final rowData = data[row];
+      if (rowData is! List) continue;
+      final groupCount = min(rowData.length, _groupCount);
+      for (int group = 0; group < groupCount; group++) {
+        final name = rowData[group];
+        if (name is! String) continue;
         final match = RowPattern.values.firstWhere(
           (pattern) => pattern.name == name,
-          orElse: () => parsedPatterns[index],
+          orElse: () => parsed[row][group],
         );
-        parsedPatterns[index] = match;
+        parsed[row][group] = match;
       }
     }
-    return parsedPatterns;
+    return parsed;
   }
 }

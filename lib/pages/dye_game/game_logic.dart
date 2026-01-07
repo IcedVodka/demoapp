@@ -69,39 +69,39 @@ class GameLogic {
   }
 
   static Set<String> calculateCustomCombinations({
-    required List<List<CellData>> customCells,
-    required List<RowPattern> customRowPatterns,
-    required Color hitColor,
-    required Color missColor,
+    required List<List<CellData>> cells,
+    required List<List<RowPattern>> groupPatterns,
   }) {
     Set<String>? merged;
-    var hasRow = false;
-    for (int row = 0; row < customCells.length; row++) {
-      final digits = _customRowDigits(customCells[row]);
-      if (digits == null) continue;
-      hasRow = true;
-      final pattern = row < customRowPatterns.length
-          ? customRowPatterns[row]
-          : RowPattern.red2blue1;
-      final assignments = _rowColorAssignments(
-        cells: customCells[row],
-        pattern: pattern,
-        hitColor: hitColor,
-        missColor: missColor,
-      );
-      if (assignments.isEmpty) return <String>{};
-      final rowResults = <String>{};
-      for (final assignment in assignments) {
-        rowResults.addAll(_combinationsForAssignment(digits, assignment));
+    var hasGroup = false;
+    final groupCount =
+        groupPatterns.isNotEmpty ? groupPatterns.first.length : 0;
+    for (int row = 0; row < cells.length; row++) {
+      final rowCells = cells[row];
+      final patterns =
+          row < groupPatterns.length ? groupPatterns[row] : const <RowPattern>[];
+      for (int group = 0; group < groupCount; group++) {
+        final pattern =
+            group < patterns.length ? patterns[group] : RowPattern.none;
+        if (pattern.isNone) continue;
+        final digits = _groupDigits(rowCells, group * 3, 3);
+        if (digits == null) continue;
+        hasGroup = true;
+        final assignments = _assignmentsForRedCount(pattern.redCount);
+        if (assignments.isEmpty) return <String>{};
+        final groupResults = <String>{};
+        for (final assignment in assignments) {
+          groupResults.addAll(_combinationsForAssignment(digits, assignment));
+        }
+        if (merged == null) {
+          merged = groupResults;
+        } else {
+          merged = merged.intersection(groupResults);
+        }
+        if (merged.isEmpty) return <String>{};
       }
-      if (merged == null) {
-        merged = rowResults;
-      } else {
-        merged = merged.intersection(rowResults);
-      }
-      if (merged.isEmpty) return <String>{};
     }
-    if (!hasRow) {
+    if (!hasGroup) {
       return _allCombinationsSet();
     }
     return merged ?? <String>{};
@@ -154,80 +154,32 @@ class GameLogic {
     return combinations;
   }
 
-  static List<int>? _customRowDigits(List<CellData> cells) {
+  static List<int>? _groupDigits(
+    List<CellData> cells,
+    int startCol,
+    int length,
+  ) {
+    if (startCol + length > cells.length) return null;
     final digits = <int>[];
-    for (final cell in cells) {
-      final value = cell.value;
+    for (int offset = 0; offset < length; offset++) {
+      final value = cells[startCol + offset].value;
       if (value == null) return null;
       digits.add(value);
     }
     return digits;
   }
 
-  static List<int> _customFixedColors({
-    required List<CellData> cells,
-    required Color hitColor,
-    required Color missColor,
-  }) {
-    final colors = <int>[];
-    for (final cell in cells) {
-      final hasRed = _cellHasTargetColor(cell, hitColor);
-      final hasBlue = _cellHasTargetColor(cell, missColor);
-      if (hasRed) {
-        colors.add(1);
-      } else if (hasBlue) {
-        colors.add(-1);
-      } else {
-        colors.add(0);
-      }
-    }
-    return colors;
-  }
-
-  static List<List<bool>> _rowColorAssignments({
-    required List<CellData> cells,
-    required RowPattern pattern,
-    required Color hitColor,
-    required Color missColor,
-  }) {
-    final fixedColors = _customFixedColors(
-      cells: cells,
-      hitColor: hitColor,
-      missColor: missColor,
-    );
-    final requiredRed = pattern.redCount;
-    final requiredBlue = pattern.blueCount;
-    final fixedRed = fixedColors.where((value) => value == 1).length;
-    final fixedBlue = fixedColors.where((value) => value == -1).length;
-    if (fixedRed > requiredRed || fixedBlue > requiredBlue) {
-      return [];
-    }
-    final unknownIndices = <int>[];
-    for (int index = 0; index < fixedColors.length; index++) {
-      if (fixedColors[index] == 0) {
-        unknownIndices.add(index);
-      }
-    }
-    final remainingRed = requiredRed - fixedRed;
-    if (remainingRed < 0 || remainingRed > unknownIndices.length) {
-      return [];
-    }
-    final base = List<bool>.filled(cells.length, false);
-    for (int index = 0; index < fixedColors.length; index++) {
-      if (fixedColors[index] == 1) {
-        base[index] = true;
-      }
-    }
+  static List<List<bool>> _assignmentsForRedCount(int redCount) {
+    if (redCount < 0 || redCount > 3) return [];
     final assignments = <List<bool>>[];
-    final totalMasks = 1 << unknownIndices.length;
+    final totalMasks = 1 << 3;
     for (int mask = 0; mask < totalMasks; mask++) {
-      if (bitCount(mask) != remainingRed) continue;
-      final assignment = List<bool>.from(base);
-      for (int bit = 0; bit < unknownIndices.length; bit++) {
-        final index = unknownIndices[bit];
-        assignment[index] = (mask & (1 << bit)) != 0;
-      }
-      assignments.add(assignment);
+      if (bitCount(mask) != redCount) continue;
+      assignments.add([
+        (mask & 1) != 0,
+        (mask & 2) != 0,
+        (mask & 4) != 0,
+      ]);
     }
     return assignments;
   }

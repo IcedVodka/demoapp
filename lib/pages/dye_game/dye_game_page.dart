@@ -8,7 +8,6 @@ import '../../models/compare_mode.dart';
 import '../../models/diff_marker.dart';
 import '../../utils/color_utils.dart';
 import '../../widgets/calculation_panel.dart';
-import '../../widgets/number_cell.dart';
 import '../../widgets/number_grid.dart';
 import 'game_logic.dart';
 import 'game_models.dart';

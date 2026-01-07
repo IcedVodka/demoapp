@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../utils/color_utils.dart';
@@ -11,9 +11,19 @@ class CalculationPanel extends StatefulWidget {
   const CalculationPanel({
     super.key,
     required this.baseCombinationsBuilder,
+    required this.hitColor,
+    required this.missColor,
+    required this.baseColor,
+    this.onCustomCalculate,
+    this.onTotalCalculate,
   });
 
   final List<String> Function() baseCombinationsBuilder;
+  final Color hitColor;
+  final Color missColor;
+  final Color baseColor;
+  final VoidCallback? onCustomCalculate;
+  final VoidCallback? onTotalCalculate;
 
   @override
   State<CalculationPanel> createState() => CalculationPanelState();
@@ -47,6 +57,12 @@ enum _ConsecutivePattern {
   none,
 }
 
+enum _DistanceFilter {
+  none,
+  red,
+  blue,
+}
+
 class _RouteRequirement {
   final int route0;
   final int route1;
@@ -69,7 +85,7 @@ class _Option<T> {
 class CalculationPanelState extends State<CalculationPanel> {
   static const String _storageKey = 'calculation_panel_config_v1';
 
-  final Set<int> _mustHaveDigits = {};
+  final Map<int, Set<int>> _digitCountSelections = {};
   final Set<int> _mod3Remainders = {};
   final Set<int> _sumTailDigits = {};
   final Set<_SizePattern> _sizePatterns = {};
@@ -77,10 +93,10 @@ class CalculationPanelState extends State<CalculationPanel> {
   final Set<int> _spanDiffs = {};
   final Set<_ShapePattern> _shapePatterns = {};
   final Set<_ConsecutivePattern> _consecutivePatterns = {};
-
-  final TextEditingController _route0Controller = TextEditingController();
-  final TextEditingController _route1Controller = TextEditingController();
-  final TextEditingController _route2Controller = TextEditingController();
+  final List<Set<int>> _routeFilters =
+      List.generate(3, (_) => <int>{});
+  final List<_DistanceFilter> _distanceFilters =
+      List.filled(3, _DistanceFilter.none);
 
   @override
   void initState() {
@@ -90,9 +106,6 @@ class CalculationPanelState extends State<CalculationPanel> {
 
   @override
   void dispose() {
-    _route0Controller.dispose();
-    _route1Controller.dispose();
-    _route2Controller.dispose();
     super.dispose();
   }
 
@@ -107,6 +120,112 @@ class CalculationPanelState extends State<CalculationPanel> {
     unawaited(_saveConfig());
   }
 
+  void _toggleDigit(int digit) {
+    setState(() {
+      if (_digitCountSelections.containsKey(digit)) {
+        _digitCountSelections.remove(digit);
+      } else {
+        _digitCountSelections[digit] = {1};
+      }
+    });
+    unawaited(_saveConfig());
+  }
+
+  Future<void> _editDigitCounts(int digit) async {
+    final current = _digitCountSelections[digit] ?? {1};
+    final result = await _showCountPicker(
+      title: '数字$digit出现次数',
+      options: const [1, 2, 3],
+      initial: current,
+    );
+    if (result == null) return;
+    setState(() {
+      if (result.isEmpty) {
+        _digitCountSelections.remove(digit);
+      } else {
+        _digitCountSelections[digit] = result;
+      }
+    });
+    unawaited(_saveConfig());
+  }
+
+  Future<void> _editRouteCounts(int index) async {
+    final result = await _showCountPicker(
+      title: '${index}路筛选',
+      options: const [0, 1, 2, 3],
+      initial: _routeFilters[index],
+    );
+    if (result == null) return;
+    setState(() {
+      _routeFilters[index]
+        ..clear()
+        ..addAll(result);
+    });
+    unawaited(_saveConfig());
+  }
+
+  void _toggleDistanceFilter(int index) {
+    setState(() {
+      final current = _distanceFilters[index];
+      final next =
+          _DistanceFilter.values[(current.index + 1) % _DistanceFilter.values.length];
+      _distanceFilters[index] = next;
+    });
+    unawaited(_saveConfig());
+  }
+
+  Future<Set<int>?> _showCountPicker({
+    required String title,
+    required List<int> options,
+    required Set<int> initial,
+  }) {
+    final selected = Set<int>.from(initial);
+    return showDialog<Set<int>>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: Text(title),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: options
+                    .map(
+                      (value) => CheckboxListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        value: selected.contains(value),
+                        title: Text('出现$value次'),
+                        onChanged: (checked) {
+                          setState(() {
+                            if (checked == true) {
+                              selected.add(value);
+                            } else {
+                              selected.remove(value);
+                            }
+                          });
+                        },
+                      ),
+                    )
+                    .toList(),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('取消'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(selected),
+                  child: const Text('确定'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   Set<int> _intSetFrom(dynamic data) {
     if (data is! List) return {};
     final result = <int>{};
@@ -114,6 +233,52 @@ class CalculationPanelState extends State<CalculationPanel> {
       if (item is num) {
         result.add(item.toInt());
       }
+    }
+    return result;
+  }
+
+  Map<int, Set<int>> _digitCountsFrom(dynamic data) {
+    final result = <int, Set<int>>{};
+    if (data is! List) return result;
+    for (final entry in data) {
+      if (entry is! Map) continue;
+      final digitValue = entry['digit'];
+      final countsValue = entry['counts'];
+      if (digitValue is! num) continue;
+      final digit = digitValue.toInt();
+      if (digit < 0 || digit > 9) continue;
+      final counts = _intSetFrom(countsValue);
+      if (counts.isEmpty) continue;
+      result[digit] = counts;
+    }
+    return result;
+  }
+
+  List<Set<int>> _routeFiltersFrom(dynamic data) {
+    final result = List.generate(3, (_) => <int>{});
+    if (data is! List) return result;
+    for (int index = 0; index < result.length; index++) {
+      if (index >= data.length) break;
+      result[index] = _intSetFrom(data[index]);
+    }
+    return result;
+  }
+
+  List<_DistanceFilter> _distanceFiltersFrom(dynamic data) {
+    final result = List<_DistanceFilter>.filled(
+      3,
+      _DistanceFilter.none,
+    );
+    if (data is! List) return result;
+    for (int index = 0; index < result.length; index++) {
+      if (index >= data.length) break;
+      final name = data[index];
+      if (name is! String) continue;
+      final match = _DistanceFilter.values.firstWhere(
+        (value) => value.name == name,
+        orElse: () => result[index],
+      );
+      result[index] = match;
     }
     return result;
   }
@@ -146,7 +311,13 @@ class CalculationPanelState extends State<CalculationPanel> {
     final decoded = jsonDecode(raw);
     if (decoded is! Map<String, dynamic>) return;
 
+    final digitCounts = _digitCountsFrom(decoded['digitCounts']);
     final mustHave = _intSetFrom(decoded['mustHave']);
+    if (digitCounts.isEmpty && mustHave.isNotEmpty) {
+      for (final digit in mustHave) {
+        digitCounts[digit] = {1};
+      }
+    }
     final mod3 = _intSetFrom(decoded['mod3']);
     final sumTail = _intSetFrom(decoded['sumTail']);
     final span = _intSetFrom(decoded['span']);
@@ -155,12 +326,28 @@ class CalculationPanelState extends State<CalculationPanel> {
     final shape = _enumSetFromNames(_ShapePattern.values, decoded['shape']);
     final consecutive =
         _enumSetFromNames(_ConsecutivePattern.values, decoded['consecutive']);
+    final routeFilters = _routeFiltersFrom(decoded['routeFilters']);
+    if (routeFilters.every((set) => set.isEmpty)) {
+      final legacyValues = [
+        decoded['route0'],
+        decoded['route1'],
+        decoded['route2'],
+      ];
+      for (int index = 0; index < legacyValues.length; index++) {
+        final value = legacyValues[index];
+        if (value is num) {
+          final count = value.toInt().clamp(0, 3);
+          routeFilters[index].add(count);
+        }
+      }
+    }
+    final distanceFilters = _distanceFiltersFrom(decoded['distanceFilters']);
 
     if (!mounted) return;
     setState(() {
-      _mustHaveDigits
+      _digitCountSelections
         ..clear()
-        ..addAll(mustHave);
+        ..addAll(digitCounts);
       _mod3Remainders
         ..clear()
         ..addAll(mod3);
@@ -182,16 +369,29 @@ class CalculationPanelState extends State<CalculationPanel> {
       _consecutivePatterns
         ..clear()
         ..addAll(consecutive);
-      _route0Controller.text = decoded['route0']?.toString() ?? '';
-      _route1Controller.text = decoded['route1']?.toString() ?? '';
-      _route2Controller.text = decoded['route2']?.toString() ?? '';
+      for (int index = 0; index < _routeFilters.length; index++) {
+        _routeFilters[index]
+          ..clear()
+          ..addAll(routeFilters[index]);
+      }
+      for (int index = 0; index < _distanceFilters.length; index++) {
+        _distanceFilters[index] = distanceFilters[index];
+      }
     });
   }
 
   Future<void> _saveConfig() async {
     final prefs = await SharedPreferences.getInstance();
     final data = <String, dynamic>{
-      'mustHave': _sortedInts(_mustHaveDigits),
+      'mustHave': _sortedInts(_digitCountSelections.keys.toSet()),
+      'digitCounts': _digitCountSelections.entries
+          .map(
+            (entry) => {
+              'digit': entry.key,
+              'counts': _sortedInts(entry.value),
+            },
+          )
+          .toList(),
       'mod3': _sortedInts(_mod3Remainders),
       'sumTail': _sortedInts(_sumTailDigits),
       'size': _sizePatterns.map((value) => value.name).toList(),
@@ -200,16 +400,16 @@ class CalculationPanelState extends State<CalculationPanel> {
       'shape': _shapePatterns.map((value) => value.name).toList(),
       'consecutive':
           _consecutivePatterns.map((value) => value.name).toList(),
-      'route0': _route0Controller.text.trim(),
-      'route1': _route1Controller.text.trim(),
-      'route2': _route2Controller.text.trim(),
+      'routeFilters': _routeFilters.map(_sortedInts).toList(),
+      'distanceFilters':
+          _distanceFilters.map((value) => value.name).toList(),
     };
     await prefs.setString(_storageKey, jsonEncode(data));
   }
 
   void _clearAllFilters() {
     setState(() {
-      _mustHaveDigits.clear();
+      _digitCountSelections.clear();
       _mod3Remainders.clear();
       _sumTailDigits.clear();
       _sizePatterns.clear();
@@ -217,43 +417,14 @@ class CalculationPanelState extends State<CalculationPanel> {
       _spanDiffs.clear();
       _shapePatterns.clear();
       _consecutivePatterns.clear();
-      _route0Controller.clear();
-      _route1Controller.clear();
-      _route2Controller.clear();
+      for (final filter in _routeFilters) {
+        filter.clear();
+      }
+      for (int index = 0; index < _distanceFilters.length; index++) {
+        _distanceFilters[index] = _DistanceFilter.none;
+      }
     });
     unawaited(_saveConfig());
-  }
-
-  bool _hasRouteInput() {
-    return _route0Controller.text.trim().isNotEmpty ||
-        _route1Controller.text.trim().isNotEmpty ||
-        _route2Controller.text.trim().isNotEmpty;
-  }
-
-  _RouteRequirement? _parseRouteRequirement() {
-    if (!_hasRouteInput()) return null;
-    final texts = [
-      _route0Controller.text.trim(),
-      _route1Controller.text.trim(),
-      _route2Controller.text.trim(),
-    ];
-    if (texts.any((text) => text.isEmpty)) return null;
-    final values = texts.map(int.tryParse).toList();
-    if (values.any((value) => value == null)) return null;
-    final route0 = values[0]!;
-    final route1 = values[1]!;
-    final route2 = values[2]!;
-    if (route0 + route1 + route2 != 3) return null;
-    return _RouteRequirement(route0: route0, route1: route1, route2: route2);
-  }
-
-  void _showSnack(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        duration: const Duration(milliseconds: 1600),
-      ),
-    );
   }
 
   void _showResultDialog(List<String> combinations) {
@@ -303,21 +474,16 @@ class CalculationPanelState extends State<CalculationPanel> {
     );
   }
 
-  List<String>? buildFilteredCombinations() {
-    final routeRequirement = _parseRouteRequirement();
-    if (routeRequirement == null && _hasRouteInput()) {
-      return null;
-    }
-
+  List<String> buildFilteredCombinations() {
     final baseCombinations = widget.baseCombinationsBuilder();
-    if (_noFiltersSelected() && routeRequirement == null) {
+    if (_noFiltersSelected()) {
       return baseCombinations;
     }
 
     final results = <String>[];
     for (final combination in baseCombinations) {
       final digits = _digitsFrom(combination);
-      if (!_matchesFilters(digits, routeRequirement)) continue;
+      if (!_matchesFilters(digits)) continue;
       results.add(combination);
     }
     return results;
@@ -325,22 +491,24 @@ class CalculationPanelState extends State<CalculationPanel> {
 
   void _onCalculate() {
     final results = buildFilteredCombinations();
-    if (results == null) {
-      _showSnack('012路需填写3个数字且数字之和为3');
-      return;
-    }
     _showResultDialog(results);
   }
 
   bool _noFiltersSelected() {
-    return _mustHaveDigits.isEmpty &&
+    final hasRouteFilter =
+        _routeFilters.any((filter) => filter.isNotEmpty);
+    final hasDistanceFilter =
+        _distanceFilters.any((filter) => filter != _DistanceFilter.none);
+    return _digitCountSelections.isEmpty &&
         _mod3Remainders.isEmpty &&
         _sumTailDigits.isEmpty &&
         _sizePatterns.isEmpty &&
         _parityPatterns.isEmpty &&
         _spanDiffs.isEmpty &&
         _shapePatterns.isEmpty &&
-        _consecutivePatterns.isEmpty;
+        _consecutivePatterns.isEmpty &&
+        !hasRouteFilter &&
+        !hasDistanceFilter;
   }
 
   List<int> _digitsFrom(String combination) {
@@ -352,10 +520,78 @@ class CalculationPanelState extends State<CalculationPanel> {
     ];
   }
 
-  bool _matchesFilters(List<int> digits, _RouteRequirement? routeRequirement) {
-    if (_mustHaveDigits.isNotEmpty &&
-        !digits.any(_mustHaveDigits.contains)) {
-      return false;
+  List<int> _digitCountsFor(List<int> digits) {
+    final counts = List<int>.filled(10, 0);
+    for (final digit in digits) {
+      if (digit >= 0 && digit < counts.length) {
+        counts[digit]++;
+      }
+    }
+    return counts;
+  }
+
+  int _digitDiff(int a, int b) {
+    final diff = (a - b).abs();
+    return min(diff, 10 - diff);
+  }
+
+  bool _matchesDistanceFilter(_DistanceFilter filter, int diff) {
+    switch (filter) {
+      case _DistanceFilter.none:
+        return true;
+      case _DistanceFilter.red:
+        return diff <= 3;
+      case _DistanceFilter.blue:
+        return diff > 3;
+    }
+  }
+
+  Color _distanceFilterColor(_DistanceFilter filter) {
+    switch (filter) {
+      case _DistanceFilter.red:
+        return widget.hitColor;
+      case _DistanceFilter.blue:
+        return widget.missColor;
+      case _DistanceFilter.none:
+        return widget.baseColor;
+    }
+  }
+
+  String _countsLabel(Set<int> counts) {
+    if (counts.isEmpty) return '不限';
+    final sorted = counts.toList()..sort();
+    return sorted.join(',');
+  }
+
+  List<Widget> _withSpacing(List<Widget> children, double spacing) {
+    final spaced = <Widget>[];
+    for (int index = 0; index < children.length; index++) {
+      spaced.add(children[index]);
+      if (index != children.length - 1) {
+        spaced.add(SizedBox(width: spacing));
+      }
+    }
+    return spaced;
+  }
+
+  Widget _scrollRow(List<Widget> children, {double spacing = 8}) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(children: _withSpacing(children, spacing)),
+    );
+  }
+
+  bool _matchesFilters(List<int> digits) {
+    if (_digitCountSelections.isNotEmpty) {
+      final counts = _digitCountsFor(digits);
+      for (final entry in _digitCountSelections.entries) {
+        final digit = entry.key;
+        final allowed = entry.value;
+        if (allowed.isEmpty) continue;
+        if (!allowed.contains(counts[digit])) {
+          return false;
+        }
+      }
     }
 
     if (_mod3Remainders.isNotEmpty) {
@@ -379,13 +615,18 @@ class CalculationPanelState extends State<CalculationPanel> {
       }
     }
 
-    if (routeRequirement != null) {
-      final counts = _routeCountsFor(digits);
-      if (counts.route0 != routeRequirement.route0 ||
-          counts.route1 != routeRequirement.route1 ||
-          counts.route2 != routeRequirement.route2) {
-        return false;
-      }
+    final routeCounts = _routeCountsFor(digits);
+    if (_routeFilters[0].isNotEmpty &&
+        !_routeFilters[0].contains(routeCounts.route0)) {
+      return false;
+    }
+    if (_routeFilters[1].isNotEmpty &&
+        !_routeFilters[1].contains(routeCounts.route1)) {
+      return false;
+    }
+    if (_routeFilters[2].isNotEmpty &&
+        !_routeFilters[2].contains(routeCounts.route2)) {
+      return false;
     }
 
     if (_parityPatterns.isNotEmpty) {
@@ -414,6 +655,19 @@ class CalculationPanelState extends State<CalculationPanel> {
       if (!_consecutivePatterns.contains(pattern)) {
         return false;
       }
+    }
+
+    final diff01 = _digitDiff(digits[0], digits[1]);
+    final diff12 = _digitDiff(digits[1], digits[2]);
+    final diff20 = _digitDiff(digits[2], digits[0]);
+    if (!_matchesDistanceFilter(_distanceFilters[0], diff01)) {
+      return false;
+    }
+    if (!_matchesDistanceFilter(_distanceFilters[1], diff12)) {
+      return false;
+    }
+    if (!_matchesDistanceFilter(_distanceFilters[2], diff20)) {
+      return false;
     }
 
     return true;
@@ -580,21 +834,42 @@ class CalculationPanelState extends State<CalculationPanel> {
     );
   }
 
-  Widget _routeField(String label, TextEditingController controller) {
-    return SizedBox(
-      width: 54,
-      child: TextField(
-        controller: controller,
-        keyboardType: TextInputType.number,
-        textAlign: TextAlign.center,
-        maxLength: 1,
-        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-        onChanged: (_) => unawaited(_saveConfig()),
-        decoration: InputDecoration(
-          labelText: label,
-          counterText: '',
-          isDense: true,
-          border: const OutlineInputBorder(),
+  Widget _distanceFilterCell(int index) {
+    final color = _distanceFilterColor(_distanceFilters[index]);
+    final borderRadius = BorderRadius.circular(8);
+    return InkWell(
+      onTap: () => _toggleDistanceFilter(index),
+      borderRadius: borderRadius,
+      child: AspectRatio(
+        aspectRatio: 1,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: borderRadius,
+            border: Border.all(color: Colors.black26),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(7),
+            child: Column(
+              children: [
+                Expanded(
+                  child: Row(
+                    children: [
+                      Expanded(child: Container(color: color)),
+                      Expanded(child: Container(color: color)),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: Row(
+                    children: [
+                      Expanded(child: Container(color: color)),
+                      Expanded(child: Container(color: color)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -627,6 +902,7 @@ class CalculationPanelState extends State<CalculationPanel> {
       _Option(_ConsecutivePattern.two, '2'),
       _Option(_ConsecutivePattern.three, '3'),
     ];
+    final selectedDigits = _digitCountSelections.keys.toList()..sort();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -637,7 +913,7 @@ class CalculationPanelState extends State<CalculationPanel> {
               child: OutlinedButton.icon(
                 onPressed: _clearAllFilters,
                 icon: const Icon(Icons.refresh, size: 16),
-                label: const Text('一键清空配置'),
+                label: const Text('清空配置'),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   textStyle: const TextStyle(
@@ -652,7 +928,7 @@ class CalculationPanelState extends State<CalculationPanel> {
               child: ElevatedButton.icon(
                 onPressed: _onCalculate,
                 icon: const Icon(Icons.calculate),
-                label: const Text('计算'),
+                label: const Text('锁定计算'),
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   textStyle: const TextStyle(
@@ -664,29 +940,97 @@ class CalculationPanelState extends State<CalculationPanel> {
             ),
           ],
         ),
-        const SizedBox(height: 16),
-        _section(
-          title: '必选',
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: List.generate(
-              10,
-              (index) => _toggleChip(
-                selected: _mustHaveDigits.contains(index),
-                label: index.toString(),
-                onTap: () => _toggleSelection(_mustHaveDigits, index),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: widget.onCustomCalculate,
+                icon: const Icon(Icons.calculate_outlined, size: 16),
+                label: const Text('自定义计算'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  textStyle: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
             ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: widget.onTotalCalculate,
+                icon: const Icon(Icons.functions),
+                label: const Text('总计算'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  textStyle: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        _section(
+          title: '距离筛选',
+          subtitle: '依次为百十、十个、个百',
+          child: Column(
+            children: [
+              Row(
+                children: _withSpacing(
+                  List.generate(
+                    3,
+                    (index) => Expanded(child: _distanceFilterCell(index)),
+                  ),
+                  8,
+                ),
+              ),
+            ],
+          ),
+        ),
+        divider,
+        _section(
+          title: '必选',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _scrollRow(
+                List.generate(
+                  10,
+                  (index) => _toggleChip(
+                    selected: _digitCountSelections.containsKey(index),
+                    label: index.toString(),
+                    onTap: () => _toggleDigit(index),
+                  ),
+                ),
+              ),
+              if (selectedDigits.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                _scrollRow(
+                  selectedDigits
+                      .map(
+                        (digit) => _toggleChip(
+                          selected: true,
+                          label:
+                              '$digit次:${_countsLabel(_digitCountSelections[digit] ?? const <int>{})}',
+                          onTap: () => _editDigitCounts(digit),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ],
+            ],
           ),
         ),
         divider,
         _section(
           title: '除3余数',
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: List.generate(
+          child: _scrollRow(
+            List.generate(
               3,
               (index) => _toggleChip(
                 selected: _mod3Remainders.contains(index),
@@ -699,10 +1043,8 @@ class CalculationPanelState extends State<CalculationPanel> {
         divider,
         _section(
           title: '合尾',
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: List.generate(
+          child: _scrollRow(
+            List.generate(
               10,
               (index) => _toggleChip(
                 selected: _sumTailDigits.contains(index),
@@ -715,10 +1057,8 @@ class CalculationPanelState extends State<CalculationPanel> {
         divider,
         _section(
           title: '小大',
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: sizeOptions
+          child: _scrollRow(
+            sizeOptions
                 .map(
                   (option) => _toggleChip(
                     selected: _sizePatterns.contains(option.value),
@@ -732,23 +1072,22 @@ class CalculationPanelState extends State<CalculationPanel> {
         divider,
         _section(
           title: '012路',
-          child: Row(
-            children: [
-              _routeField('0路', _route0Controller),
-              const SizedBox(width: 10),
-              _routeField('1路', _route1Controller),
-              const SizedBox(width: 10),
-              _routeField('2路', _route2Controller),
-            ],
+          child: _scrollRow(
+            List.generate(
+              3,
+              (index) => _toggleChip(
+                selected: _routeFilters[index].isNotEmpty,
+                label: '$index路:${_countsLabel(_routeFilters[index])}',
+                onTap: () => _editRouteCounts(index),
+              ),
+            ),
           ),
         ),
         divider,
         _section(
           title: '奇偶',
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: parityOptions
+          child: _scrollRow(
+            parityOptions
                 .map(
                   (option) => _toggleChip(
                     selected: _parityPatterns.contains(option.value),
@@ -762,10 +1101,8 @@ class CalculationPanelState extends State<CalculationPanel> {
         divider,
         _section(
           title: '跨差',
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: List.generate(
+          child: _scrollRow(
+            List.generate(
               10,
               (index) => _toggleChip(
                 selected: _spanDiffs.contains(index),
@@ -778,10 +1115,8 @@ class CalculationPanelState extends State<CalculationPanel> {
         divider,
         _section(
           title: '凹凸型',
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: shapeOptions
+          child: _scrollRow(
+            shapeOptions
                 .map(
                   (option) => _toggleChip(
                     selected: _shapePatterns.contains(option.value),
@@ -796,10 +1131,8 @@ class CalculationPanelState extends State<CalculationPanel> {
         divider,
         _section(
           title: '连数',
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: consecutiveOptions
+          child: _scrollRow(
+            consecutiveOptions
                 .map(
                   (option) => _toggleChip(
                     selected: _consecutivePatterns.contains(option.value),

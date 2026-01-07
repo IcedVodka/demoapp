@@ -4,7 +4,20 @@ import 'package:flutter/material.dart';
 
 import '../models/cell_data.dart';
 import '../models/diff_marker.dart';
+import '../utils/color_utils.dart';
 import 'number_cell.dart';
+
+class SummaryCellData {
+  final String label;
+  final List<Color> colors;
+  final VoidCallback? onTap;
+
+  const SummaryCellData({
+    required this.label,
+    required this.colors,
+    this.onTap,
+  });
+}
 
 class NumberGrid extends StatelessWidget {
   const NumberGrid({
@@ -15,10 +28,10 @@ class NumberGrid extends StatelessWidget {
     required this.majorGap,
     required this.cellRadius,
     this.rowGapOverrides = const {},
-    this.rowSummaries,
+    this.leftSummaries,
+    this.rightSummaries,
     this.summaryScale = 0.62,
     this.summaryGap = 8,
-    this.summaryItemGap = 6,
     this.showBall = false,
     this.diffMarkers = const [],
     this.showFixedSelectors = false,
@@ -34,10 +47,10 @@ class NumberGrid extends StatelessWidget {
   final double majorGap;
   final double cellRadius;
   final Set<int> rowGapOverrides;
-  final List<List<String>>? rowSummaries;
+  final List<SummaryCellData>? leftSummaries;
+  final List<SummaryCellData>? rightSummaries;
   final double summaryScale;
   final double summaryGap;
-  final double summaryItemGap;
   final bool showBall;
   final List<DiffMarker> diffMarkers;
   final bool showFixedSelectors;
@@ -96,19 +109,19 @@ class NumberGrid extends StatelessWidget {
         final availableHeight = maxHeight - gridOffset;
         final totalRowGap = _totalGap(rowCount, isRow: true);
         final totalColGap = _totalGap(colCount, isRow: false);
-        final summarySource = rowSummaries;
-        final summaryCount = summarySource == null || summarySource.isEmpty
-            ? 0
-            : summarySource.first.length;
+        final leftSummarySource = leftSummaries;
+        final rightSummarySource = rightSummaries;
+        final leftSummaryEnabled =
+            leftSummarySource != null && leftSummarySource.isNotEmpty;
+        final rightSummaryEnabled =
+            rightSummarySource != null && rightSummarySource.isNotEmpty;
+        final summaryCount =
+            (leftSummaryEnabled ? 1 : 0) + (rightSummaryEnabled ? 1 : 0);
         final summaryEnabled = summaryCount > 0;
-        final summaryOuterGap = summaryEnabled ? summaryGap : 0.0;
-        final summaryInnerGap =
-            summaryEnabled ? summaryItemGap * (summaryCount - 1) : 0.0;
+        final summaryOuterGap = (leftSummaryEnabled ? summaryGap : 0.0) +
+            (rightSummaryEnabled ? summaryGap : 0.0);
         final widthBudget = summaryEnabled
-            ? max(
-                0.0,
-                availableWidth - totalColGap - summaryOuterGap - summaryInnerGap,
-              )
+            ? max(0.0, availableWidth - totalColGap - summaryOuterGap)
             : max(0.0, availableWidth - totalColGap);
         final widthBasedCellSize = summaryEnabled
             ? widthBudget / (colCount + summaryCount * summaryScale)
@@ -120,17 +133,19 @@ class NumberGrid extends StatelessWidget {
         final actualGridHeight = cellSize * rowCount + totalRowGap;
         final summaryCellSize =
             summaryEnabled ? cellSize * summaryScale : 0.0;
-        final summaryWidth = summaryEnabled
-            ? summaryCount * summaryCellSize +
-                summaryItemGap * (summaryCount - 1)
-            : 0.0;
-        final contentWidth = actualGridWidth +
-            (summaryEnabled ? summaryOuterGap + summaryWidth : 0.0);
+        final summaryWidth =
+            summaryEnabled ? summaryCount * summaryCellSize : 0.0;
+        final contentWidth =
+            actualGridWidth + (summaryEnabled ? summaryOuterGap + summaryWidth : 0.0);
         final extraX = (availableWidth - contentWidth) / 2;
         final extraY = (availableHeight - actualGridHeight) / 2;
-        final gridStartX = gridOffset + max(0.0, extraX);
+        final gridStartX = gridOffset +
+            max(0.0, extraX) +
+            (leftSummaryEnabled ? summaryCellSize + summaryGap : 0.0);
         final gridStartY = gridOffset + max(0.0, extraY);
-        final summaryStartX = gridStartX + actualGridWidth + summaryOuterGap;
+        final leftSummaryStartX = gridOffset + max(0.0, extraX);
+        final rightSummaryStartX =
+            gridStartX + actualGridWidth + (rightSummaryEnabled ? summaryGap : 0.0);
         final markerFontSize = (cellSize * 0.22).clamp(9.0, 14.0);
         final markerBoxSize = (cellSize * 0.34).clamp(10.0, 18.0);
         final selectorColor = Theme.of(context).colorScheme.primary;
@@ -268,21 +283,31 @@ class NumberGrid extends StatelessWidget {
 
         if (summaryEnabled) {
           for (int row = 0; row < rowCount; row++) {
-            final rowSummary = summarySource != null && row < summarySource.length
-                ? summarySource[row]
-                : const <String>[];
-            for (int index = 0; index < summaryCount; index++) {
-              final label = index < rowSummary.length ? rowSummary[index] : '';
+            final top = cellStartY(row) + (cellSize - summaryCellSize) / 2;
+            if (leftSummaryEnabled &&
+                leftSummarySource != null &&
+                row < leftSummarySource.length) {
               stackChildren.add(
                 Positioned(
-                  left: summaryStartX +
-                      index * (summaryCellSize + summaryItemGap),
-                  top: cellStartY(row) + (cellSize - summaryCellSize) / 2,
-                  child: IgnorePointer(
-                    child: _SummaryCell(
-                      label: label,
-                      size: summaryCellSize,
-                    ),
+                  left: leftSummaryStartX,
+                  top: top,
+                  child: _SummaryCell(
+                    data: leftSummarySource[row],
+                    size: summaryCellSize,
+                  ),
+                ),
+              );
+            }
+            if (rightSummaryEnabled &&
+                rightSummarySource != null &&
+                row < rightSummarySource.length) {
+              stackChildren.add(
+                Positioned(
+                  left: rightSummaryStartX,
+                  top: top,
+                  child: _SummaryCell(
+                    data: rightSummarySource[row],
+                    size: summaryCellSize,
                   ),
                 ),
               );
@@ -377,36 +402,104 @@ class NumberGrid extends StatelessWidget {
 
 class _SummaryCell extends StatelessWidget {
   const _SummaryCell({
-    required this.label,
+    required this.data,
     required this.size,
   });
 
-  final String label;
+  final SummaryCellData data;
   final double size;
 
   @override
   Widget build(BuildContext context) {
-    final fontSize = size * 0.46;
+    final fontSize = size * 0.42;
+    final colors =
+        data.colors.length == 4 ? data.colors : List<Color>.filled(4, kBaseCellColor);
+    final textColor = bestTextColor(colors);
+    final borderRadius = BorderRadius.circular(8);
     return SizedBox(
       width: size,
       height: size,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.9),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.black26),
-        ),
-        child: Center(
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: fontSize,
-              fontWeight: FontWeight.w700,
-              color: Colors.black87,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: data.onTap,
+          borderRadius: borderRadius,
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: borderRadius,
+              border: Border.all(color: Colors.black26),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(7),
+              child: Stack(
+                children: [
+                  _Quadrants(colors: colors),
+                  Positioned.fill(
+                    child: Center(
+                      child: Text(
+                        data.label,
+                        style: TextStyle(
+                          fontSize: fontSize,
+                          fontWeight: FontWeight.w700,
+                          color: textColor,
+                          shadows: [
+                            Shadow(
+                              color: Colors.black.withOpacity(0.25),
+                              offset: const Offset(0, 1),
+                              blurRadius: 2,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
       ),
     );
+  }
+}
+
+class _Quadrants extends StatelessWidget {
+  const _Quadrants({required this.colors});
+
+  final List<Color> colors;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Expanded(
+          child: Row(
+            children: [
+              Expanded(child: _Quadrant(color: colors[0])),
+              Expanded(child: _Quadrant(color: colors[1])),
+            ],
+          ),
+        ),
+        Expanded(
+          child: Row(
+            children: [
+              Expanded(child: _Quadrant(color: colors[2])),
+              Expanded(child: _Quadrant(color: colors[3])),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _Quadrant extends StatelessWidget {
+  const _Quadrant({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(color: color);
   }
 }

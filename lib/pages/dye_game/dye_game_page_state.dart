@@ -6,17 +6,12 @@ class _DyeGamePageState extends State<DyeGamePage> {
   static const double _minorGap = 0;
   static const double _majorGap = 14;
   static const Set<int> _rowGapOverrides = {2, 5};
-  static const int _summaryCount = 2;
   static const double _summaryScale = 0.62;
   static const double _summaryGap = 8;
-  static const double _summaryItemGap = 6;
   static const double _cellRadius = 0;
-  static const int _customRowCount = 10;
-  static const int _customColCount = 3;
-  static const double _customCellGap = 4;
-  static const double _customCellRadius = 8;
+  static const int _groupCount = 2;
   static const Color _baseColor = kBaseCellColor;
-  static const RowPattern _defaultRowPattern = RowPattern.red2blue1;
+  static const RowPattern _defaultRowPattern = RowPattern.none;
   Color _hitColor = const Color(0xFFE53935);
   Color _missColor = const Color(0xFF1E88E5);
   final GlobalKey<CalculationPanelState> _calculationPanelKey =
@@ -33,19 +28,9 @@ class _DyeGamePageState extends State<DyeGamePage> {
       ),
     ),
   );
-  final List<List<CellData>> _customCells = List.generate(
-    _customRowCount,
-    (_) => List.generate(
-      _customColCount,
-      (_) => CellData(
-        value: null,
-        colors: List<Color>.filled(4, _baseColor),
-      ),
-    ),
-  );
-  final List<RowPattern> _customRowPatterns = List.generate(
-    _customRowCount,
-    (_) => _defaultRowPattern,
+  final List<List<RowPattern>> _groupPatterns = List.generate(
+    _rowCount,
+    (_) => List.generate(_groupCount, (_) => _defaultRowPattern),
   );
 
   CompareMode _mode = CompareMode.horizontal;
@@ -68,8 +53,7 @@ class _DyeGamePageState extends State<DyeGamePage> {
     if (data == null) return;
     final loadedCells = data['cells'];
     if (loadedCells is! List<List<CellData>>) return;
-    final customCells = data['customCells'] as List<List<CellData>>?;
-    final customPatterns = data['customPatterns'] as List<RowPattern>?;
+    final groupPatterns = data['groupPatterns'] as List<List<RowPattern>>?;
     final mode = data['mode'] as CompareMode?;
     final threshold = data['threshold'] as int?;
     final cross3Compare = data['cross3Compare'] as bool?;
@@ -102,21 +86,11 @@ class _DyeGamePageState extends State<DyeGamePage> {
           target.lockOrder = source.lockOrder;
         }
       }
-      if (customCells != null) {
-        for (int row = 0; row < _customRowCount; row++) {
-          for (int col = 0; col < _customColCount; col++) {
-            final source = customCells[row][col];
-            final target = _customCells[row][col];
-            target.value = source.value;
-            target.colors = List<Color>.from(source.colors);
-            target.locked = false;
-            target.lockOrder = null;
+      if (groupPatterns != null) {
+        for (int row = 0; row < _rowCount; row++) {
+          for (int group = 0; group < _groupCount; group++) {
+            _groupPatterns[row][group] = groupPatterns[row][group];
           }
-        }
-      }
-      if (customPatterns != null) {
-        for (int index = 0; index < _customRowCount; index++) {
-          _customRowPatterns[index] = customPatterns[index];
         }
       }
       _normalizeLockOrders();
@@ -127,8 +101,7 @@ class _DyeGamePageState extends State<DyeGamePage> {
   Future<void> _saveState() async {
     await GameStorage.save(
       cells: _cells,
-      customCells: _customCells,
-      customPatterns: _customRowPatterns,
+      groupPatterns: _groupPatterns,
       mode: _mode,
       threshold: _threshold,
       cross3Compare: _cross3Compare,
@@ -872,106 +845,65 @@ class _DyeGamePageState extends State<DyeGamePage> {
     unawaited(_saveState());
   }
 
-  void _updateCustomPattern(int row, RowPattern pattern) {
+  void _cycleGroupPattern(int row, int group) {
+    const cycle = [
+      RowPattern.red3,
+      RowPattern.red2blue1,
+      RowPattern.red1blue2,
+      RowPattern.blue3,
+      RowPattern.none,
+    ];
+    final current = _groupPatterns[row][group];
+    final index = cycle.indexOf(current);
+    final next = cycle[(index + 1) % cycle.length];
     setState(() {
-      _customRowPatterns[row] = pattern;
+      _groupPatterns[row][group] = next;
     });
     unawaited(_saveState());
   }
 
-  void _clearCustomNumbers() {
-    setState(() {
-      for (final row in _customCells) {
-        for (final cell in row) {
-          cell.value = null;
-          cell.colors = List<Color>.filled(4, _baseColor);
-          cell.locked = false;
-          cell.lockOrder = null;
-        }
-      }
-    });
-    unawaited(_saveState());
+  List<Color> _patternColors(RowPattern pattern) {
+    final colors = List<Color>.filled(4, _baseColor);
+    if (pattern.isNone) return colors;
+    final slots = [0, 1, 2];
+    for (int index = 0; index < slots.length; index++) {
+      final color = index < pattern.redCount ? _hitColor : _missColor;
+      colors[slots[index]] = color;
+    }
+    return colors;
   }
 
-  void _importCustomNumbers() {
-    final numbers = <List<int>>[];
-    final groupCount = (_colCount / 3).floor();
-    for (int row = _rowCount - 1; row >= 0; row--) {
-      for (int group = groupCount - 1; group >= 0; group--) {
-        final startCol = group * 3;
-        final digits = <int>[];
-        var complete = true;
-        for (int offset = 0; offset < 3; offset++) {
-          final value = _cells[row][startCol + offset].value;
-          if (value == null) {
-            complete = false;
-            break;
-          }
-          digits.add(value);
-        }
-        if (complete) {
-          numbers.add(digits);
-          if (numbers.length >= _customRowCount) {
-            break;
-          }
-        }
-      }
-      if (numbers.length >= _customRowCount) {
-        break;
-      }
+  int? _groupDiffSum(int row, int group) {
+    if (_mode != CompareMode.vertical) return null;
+    final step = _cross3Compare ? 3 : 1;
+    final targetRow = row + step;
+    if (targetRow >= _rowCount) return null;
+    var sum = 0;
+    final startCol = group * 3;
+    for (int offset = 0; offset < 3; offset++) {
+      final a = _cells[row][startCol + offset].value;
+      final b = _cells[targetRow][startCol + offset].value;
+      if (a == null || b == null) return null;
+      sum += GameLogic.digitDiff(a, b);
     }
-
-    if (numbers.isEmpty) {
-      _showSnack('暂无可导入的完整三位数');
-      return;
-    }
-
-    setState(() {
-      for (final row in _customCells) {
-        for (final cell in row) {
-          cell.value = null;
-          cell.colors = List<Color>.filled(4, _baseColor);
-          cell.locked = false;
-          cell.lockOrder = null;
-        }
-      }
-      for (int index = 0; index < numbers.length; index++) {
-        final digits = numbers[index];
-        for (int col = 0; col < _customColCount; col++) {
-          final cell = _customCells[index][col];
-          cell.value = digits[col];
-          cell.colors = List<Color>.filled(4, _baseColor);
-          cell.locked = false;
-          cell.lockOrder = null;
-        }
-      }
-    });
-    unawaited(_saveState());
+    return sum;
   }
 
   void _calculateCustom() {
     final results = GameLogic.calculateCustomCombinations(
-      customCells: _customCells,
-      customRowPatterns: _customRowPatterns,
-      hitColor: _hitColor,
-      missColor: _missColor,
+      cells: _cells,
+      groupPatterns: _groupPatterns,
     );
     _showCombinationDialog('自定义计算结果', results.toList());
   }
 
   void _calculateTotal() {
     final customResults = GameLogic.calculateCustomCombinations(
-      customCells: _customCells,
-      customRowPatterns: _customRowPatterns,
-      hitColor: _hitColor,
-      missColor: _missColor,
+      cells: _cells,
+      groupPatterns: _groupPatterns,
     );
     final lockState = _calculationPanelKey.currentState;
     final lockResults = lockState?.buildFilteredCombinations();
-    if (lockState != null && lockResults == null) {
-      _showSnack('012路需填写3个数字且数字之和为3');
-      return;
-    }
     final lockSet = (lockResults ?? _buildBaseCombinations()).toSet();
     final results = lockSet.intersection(customResults);
     _showCombinationDialog('总计算结果', results.toList());
@@ -986,12 +918,11 @@ class _DyeGamePageState extends State<DyeGamePage> {
       barrierColor: Colors.black.withOpacity(0.2),
       builder: (context) {
         return FractionallySizedBox(
-          heightFactor: 0.55,
+          heightFactor: 0.25,
           child: EditCellDialog(
             cell: cell,
             row: row,
             col: col,
-            title: '编辑自定义格子',
             hitColor: _hitColor,
             missColor: _missColor,
             baseColor: _baseColor,
@@ -1011,60 +942,18 @@ class _DyeGamePageState extends State<DyeGamePage> {
     );
   }
 
-  Future<void> _editCustomCell(int row, int col) async {
-    final cell = _customCells[row][col];
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      barrierColor: Colors.black.withOpacity(0.2),
-      builder: (context) {
-        return FractionallySizedBox(
-          heightFactor: 0.55,
-          child: EditCellDialog(
-            cell: cell,
-            row: row,
-            col: col,
-            hitColor: _hitColor,
-            missColor: _missColor,
-            baseColor: _baseColor,
-            showLockToggle: false,
-            onValueChanged: (nextValue) {
-              setState(() => cell.value = nextValue);
-              unawaited(_saveState());
-            },
-            onColorChanged: (nextColor) {
-              final nextColors = List<Color>.filled(4, nextColor);
-              setState(() => cell.colors = List<Color>.from(nextColors));
-              unawaited(_saveState());
-            },
-          ),
+  List<SummaryCellData> _buildGroupSummaryCells(int group) {
+    return List.generate(
+      _rowCount,
+      (row) {
+        final sum = _groupDiffSum(row, group);
+        return SummaryCellData(
+          label: sum?.toString() ?? '',
+          colors: _patternColors(_groupPatterns[row][group]),
+          onTap: () => _cycleGroupPattern(row, group),
         );
       },
     );
-  }
-
-  int? _sumRowGroup(int row, int startCol) {
-    var sum = 0;
-    for (int offset = 0; offset < 3; offset++) {
-      final value = _cells[row][startCol + offset].value;
-      if (value == null) return null;
-      sum += value;
-    }
-    return sum;
-  }
-
-  List<List<String>> _buildRowSummaries() {
-    final summaries = <List<String>>[];
-    for (int row = 0; row < _rowCount; row++) {
-      final first = _sumRowGroup(row, 0);
-      final second = _sumRowGroup(row, 3);
-      summaries.add([
-        first?.toString() ?? '',
-        second?.toString() ?? '',
-      ]);
-    }
-    return summaries;
   }
 
   double _gridTotalGap(int count, {Set<int> gapOverrides = const {}}) {
@@ -1089,16 +978,14 @@ class _DyeGamePageState extends State<DyeGamePage> {
             _gridTotalGap(_rowCount, gapOverrides: _rowGapOverrides);
         final totalColGap = _gridTotalGap(_colCount);
         final gridWidth = max(0.0, cardWidth - padding * 2);
-        final summaryOuterGap = _summaryCount > 0 ? _summaryGap : 0.0;
-        final summaryInnerGap =
-            _summaryCount > 1 ? _summaryItemGap * (_summaryCount - 1) : 0.0;
+        final summaryCount = _groupCount;
+        final summaryOuterGap = _summaryGap * summaryCount;
         final widthBudget = max(
           0.0,
-          gridWidth - totalColGap - summaryOuterGap - summaryInnerGap,
+          gridWidth - totalColGap - summaryOuterGap,
         );
-        final widthBasedCellSize = _summaryCount > 0
-            ? widthBudget / (_colCount + _summaryCount * _summaryScale)
-            : widthBudget / _colCount;
+        final widthBasedCellSize = widthBudget /
+            (_colCount + summaryCount * _summaryScale);
         final cellSize = isCompact
             ? max(0.0, widthBasedCellSize)
             : 0.0;
@@ -1107,7 +994,8 @@ class _DyeGamePageState extends State<DyeGamePage> {
             : cardWidth - padding * 2;
         final cardHeight =
             isCompact ? gridHeight + padding * 2 : cardWidth;
-        final rowSummaries = _buildRowSummaries();
+        final leftSummaries = _buildGroupSummaryCells(0);
+        final rightSummaries = _buildGroupSummaryCells(1);
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1136,10 +1024,10 @@ class _DyeGamePageState extends State<DyeGamePage> {
                       majorGap: _majorGap,
                       cellRadius: _cellRadius,
                       rowGapOverrides: _rowGapOverrides,
-                      rowSummaries: rowSummaries,
+                      leftSummaries: leftSummaries,
+                      rightSummaries: rightSummaries,
                       summaryScale: _summaryScale,
                       summaryGap: _summaryGap,
-                      summaryItemGap: _summaryItemGap,
                       showBall: true,
                       diffMarkers: _diffMarkers,
                       showFixedSelectors: _mode == CompareMode.fixed,
@@ -1246,7 +1134,7 @@ class _DyeGamePageState extends State<DyeGamePage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '锁定展示计算',
+              '锁定计算',
               style: theme.textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.w700,
               ),
@@ -1255,232 +1143,15 @@ class _DyeGamePageState extends State<DyeGamePage> {
             CalculationPanel(
               key: _calculationPanelKey,
               baseCombinationsBuilder: _buildBaseCombinations,
+              hitColor: _hitColor,
+              missColor: _missColor,
+              baseColor: _baseColor,
+              onCustomCalculate: _calculateCustom,
+              onTotalCalculate: _calculateTotal,
             ),
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildCustomCalculationPanel() {
-    final theme = Theme.of(context);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.94),
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x14000000),
-            blurRadius: 14,
-            offset: Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '自定义计算',
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 12),
-            _buildCustomGrid(),
-            const SizedBox(height: 16),
-            _buildCustomActions(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _patternOptionButton({
-    required bool selected,
-    required VoidCallback onTap,
-    required Widget child,
-  }) {
-    final borderColor = selected ? kSelectionColor : Colors.black26;
-    final backgroundColor =
-        selected ? kSelectionFillColor : Colors.transparent;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-        decoration: BoxDecoration(
-          color: backgroundColor,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: borderColor),
-        ),
-        child: DefaultTextStyle.merge(
-          style: const TextStyle(fontWeight: FontWeight.w600),
-          child: child,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCustomRowOptions(int row) {
-    final selected = _customRowPatterns[row];
-    final options = RowPattern.values;
-    final children = <Widget>[];
-    for (int index = 0; index < options.length; index++) {
-      final pattern = options[index];
-      children.add(
-        Expanded(
-          child: _patternOptionButton(
-            selected: selected == pattern,
-            onTap: () => _updateCustomPattern(row, pattern),
-            child: Text(
-              pattern.label,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 11),
-            ),
-          ),
-        ),
-      );
-      if (index != options.length - 1) {
-        children.add(const SizedBox(width: 4));
-      }
-    }
-    return Row(children: children);
-  }
-
-  Widget _buildCustomGrid() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        const rowGap = 6.0;
-        const optionGap = 12.0;
-        const minOptionWidth = 170.0;
-        const minCellSize = 24.0;
-        const maxCellSize = 36.0;
-        final availableWidth = constraints.maxWidth;
-        final cellSize = ((availableWidth -
-                    minOptionWidth -
-                    optionGap -
-                    _customCellGap * (_customColCount - 1)) /
-                _customColCount)
-            .clamp(minCellSize, maxCellSize)
-            .toDouble();
-        final gridWidth =
-            cellSize * _customColCount + _customCellGap * (_customColCount - 1);
-        return Column(
-          children: List.generate(
-            _customRowCount,
-            (row) {
-              final rowCells = <Widget>[];
-              for (int col = 0; col < _customColCount; col++) {
-                rowCells.add(
-                  SizedBox(
-                    width: cellSize,
-                    height: cellSize,
-                    child: NumberCell(
-                      cell: _customCells[row][col],
-                      radius: _customCellRadius,
-                      onTap: () => _editCustomCell(row, col),
-                    ),
-                  ),
-                );
-                if (col != _customColCount - 1) {
-                  rowCells.add(SizedBox(width: _customCellGap));
-                }
-              }
-              return Padding(
-                padding: EdgeInsets.only(
-                  bottom: row == _customRowCount - 1 ? 0 : rowGap,
-                ),
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: gridWidth,
-                      child: Row(children: rowCells),
-                    ),
-                    const SizedBox(width: optionGap),
-                    Expanded(child: _buildCustomRowOptions(row)),
-                  ],
-                ),
-              );
-            },
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildCustomActions() {
-    return Column(
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _clearCustomNumbers,
-                icon: const Icon(Icons.cleaning_services, size: 16),
-                label: const Text('清空数字'),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  textStyle: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _importCustomNumbers,
-                icon: const Icon(Icons.download, size: 16),
-                label: const Text('导入数字'),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  textStyle: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: _calculateCustom,
-                icon: const Icon(Icons.calculate),
-                label: const Text('计算'),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  textStyle: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: _calculateTotal,
-                icon: const Icon(Icons.functions),
-                label: const Text('总计算'),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  textStyle: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
     );
   }
 
@@ -1489,46 +1160,16 @@ class _DyeGamePageState extends State<DyeGamePage> {
       padding: const EdgeInsets.all(20),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final isWide = constraints.maxWidth >= 960;
           final lockPanel = ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 420),
             child: _buildLockCalculationPanel(),
           );
-          final customPanel = ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 620),
-            child: _buildCustomCalculationPanel(),
-          );
-          if (isWide) {
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Align(
-                    alignment: Alignment.topCenter,
-                    child: lockPanel,
-                  ),
-                ),
-                const SizedBox(width: 24),
-                Expanded(
-                  child: Align(
-                    alignment: Alignment.topCenter,
-                    child: customPanel,
-                  ),
-                ),
-              ],
-            );
-          }
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Align(
                 alignment: Alignment.topCenter,
                 child: lockPanel,
-              ),
-              const SizedBox(height: 24),
-              Align(
-                alignment: Alignment.topCenter,
-                child: customPanel,
               ),
             ],
           );

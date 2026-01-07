@@ -1,4 +1,5 @@
 enum RowPattern {
+  none,
   red3,
   red2blue1,
   red1blue2,
@@ -8,6 +9,8 @@ enum RowPattern {
 extension RowPatternX on RowPattern {
   int get redCount {
     switch (this) {
+      case RowPattern.none:
+        return 0;
       case RowPattern.red3:
         return 3;
       case RowPattern.red2blue1:
@@ -19,10 +22,21 @@ extension RowPatternX on RowPattern {
     }
   }
 
-  int get blueCount => 3 - redCount;
+  int get blueCount {
+    switch (this) {
+      case RowPattern.none:
+        return 0;
+      default:
+        return 3 - redCount;
+    }
+  }
+
+  bool get isNone => this == RowPattern.none;
 
   String get label {
     switch (this) {
+      case RowPattern.none:
+        return '无色';
       case RowPattern.red3:
         return '3红';
       case RowPattern.red2blue1:
