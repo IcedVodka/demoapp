@@ -11,7 +11,6 @@ class _DyeGamePageState extends State<DyeGamePage> {
   static const double _cellRadius = 0;
   static const int _groupCount = 2;
   static const Color _baseColor = kBaseCellColor;
-  static const RowPattern _defaultRowPattern = RowPattern.none;
   Color _hitColor = const Color(0xFFE53935);
   Color _missColor = const Color(0xFF1E88E5);
   final GlobalKey<CalculationPanelState> _calculationPanelKey =
@@ -30,9 +29,9 @@ class _DyeGamePageState extends State<DyeGamePage> {
       ),
     ),
   );
-  final List<List<RowPattern>> _groupPatterns = List.generate(
+  final List<List<Set<RowPattern>>> _groupPatterns = List.generate(
     _rowCount,
-    (_) => List.generate(_groupCount, (_) => _defaultRowPattern),
+    (_) => List.generate(_groupCount, (_) => <RowPattern>{}),
   );
 
   CompareMode _mode = CompareMode.horizontal;
@@ -55,7 +54,8 @@ class _DyeGamePageState extends State<DyeGamePage> {
     if (data == null) return;
     final loadedCells = data['cells'];
     if (loadedCells is! List<List<CellData>>) return;
-    final groupPatterns = data['groupPatterns'] as List<List<RowPattern>>?;
+    final groupPatterns =
+        data['groupPatterns'] as List<List<Set<RowPattern>>>?;
     final mode = data['mode'] as CompareMode?;
     final threshold = data['threshold'] as int?;
     final cross3Compare = data['cross3Compare'] as bool?;
@@ -91,7 +91,8 @@ class _DyeGamePageState extends State<DyeGamePage> {
       if (groupPatterns != null) {
         for (int row = 0; row < _rowCount; row++) {
           for (int group = 0; group < _groupCount; group++) {
-            _groupPatterns[row][group] = groupPatterns[row][group];
+            _groupPatterns[row][group] =
+                Set<RowPattern>.from(groupPatterns[row][group]);
           }
         }
       }
@@ -847,32 +848,60 @@ class _DyeGamePageState extends State<DyeGamePage> {
     unawaited(_saveState());
   }
 
-  void _cycleGroupPattern(int row, int group) {
-    const cycle = [
-      RowPattern.red3,
-      RowPattern.red2blue1,
-      RowPattern.red1blue2,
-      RowPattern.blue3,
-      RowPattern.none,
-    ];
-    final current = _groupPatterns[row][group];
-    final index = cycle.indexOf(current);
-    final next = cycle[(index + 1) % cycle.length];
-    setState(() {
-      _groupPatterns[row][group] = next;
-    });
-    unawaited(_saveState());
+  static const List<RowPattern> _quadrantPatterns = [
+    RowPattern.red2blue1,
+    RowPattern.red1blue2,
+    RowPattern.red3,
+    RowPattern.blue3,
+  ];
+
+  Future<void> _editGroupPatterns(int row, int group) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withOpacity(0.2),
+      builder: (context) {
+        return FractionallySizedBox(
+          heightFactor: 0.25,
+          child: GroupPatternDialog(
+            row: row,
+            group: group,
+            selection: _groupPatterns[row][group],
+            hitColor: _hitColor,
+            missColor: _missColor,
+            onSelectionChanged: (nextSelection) {
+              setState(() {
+                _groupPatterns[row][group] =
+                    Set<RowPattern>.from(nextSelection);
+              });
+              unawaited(_saveState());
+            },
+          ),
+        );
+      },
+    );
   }
 
-  List<Color> _patternColors(RowPattern pattern) {
+  List<Color> _patternColors(Set<RowPattern> selection) {
     final colors = List<Color>.filled(4, _baseColor);
-    if (pattern.isNone) return colors;
-    final slots = [0, 1, 2];
-    for (int index = 0; index < slots.length; index++) {
-      final color = index < pattern.redCount ? _hitColor : _missColor;
-      colors[slots[index]] = color;
+    for (int index = 0; index < _quadrantPatterns.length; index++) {
+      final pattern = _quadrantPatterns[index];
+      if (selection.contains(pattern)) {
+        colors[index] = _patternIndicatorColor(pattern);
+      }
     }
     return colors;
+  }
+
+  Color _patternIndicatorColor(RowPattern pattern) {
+    if (pattern.isNone) return _baseColor;
+    return Color.lerp(
+          _missColor,
+          _hitColor,
+          pattern.redCount / 3,
+        ) ??
+        _baseColor;
   }
 
   int? _groupDiffSum(int row, int group) {
@@ -895,6 +924,8 @@ class _DyeGamePageState extends State<DyeGamePage> {
     final results = GameLogic.calculateCustomCombinations(
       cells: _cells,
       groupPatterns: _groupPatterns,
+      hitColor: _hitColor,
+      missColor: _missColor,
     );
     _showCombinationDialog('自定义计算结果', results.toList());
   }
@@ -903,6 +934,8 @@ class _DyeGamePageState extends State<DyeGamePage> {
     final customResults = GameLogic.calculateCustomCombinations(
       cells: _cells,
       groupPatterns: _groupPatterns,
+      hitColor: _hitColor,
+      missColor: _missColor,
     );
     final lockState = _calculationPanelKey.currentState;
     final lockResults = lockState?.buildFilteredCombinations();
@@ -973,7 +1006,7 @@ class _DyeGamePageState extends State<DyeGamePage> {
         return SummaryCellData(
           label: sum?.toString() ?? '',
           colors: _patternColors(_groupPatterns[row][group]),
-          onTap: () => _cycleGroupPattern(row, group),
+          onTap: () => _editGroupPatterns(row, group),
         );
       },
     );

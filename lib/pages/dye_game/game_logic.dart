@@ -70,7 +70,9 @@ class GameLogic {
 
   static Set<String> calculateCustomCombinations({
     required List<List<CellData>> cells,
-    required List<List<RowPattern>> groupPatterns,
+    required List<List<Set<RowPattern>>> groupPatterns,
+    required Color hitColor,
+    required Color missColor,
   }) {
     Set<String>? merged;
     var hasGroup = false;
@@ -79,19 +81,31 @@ class GameLogic {
     for (int row = 0; row < cells.length; row++) {
       final rowCells = cells[row];
       final patterns =
-          row < groupPatterns.length ? groupPatterns[row] : const <RowPattern>[];
+          row < groupPatterns.length ? groupPatterns[row] : const <Set<RowPattern>>[];
       for (int group = 0; group < groupCount; group++) {
-        final pattern =
-            group < patterns.length ? patterns[group] : RowPattern.none;
-        if (pattern.isNone) continue;
+        final selection =
+            group < patterns.length ? patterns[group] : const <RowPattern>{};
+        if (selection.isEmpty) continue;
         final digits = _groupDigits(rowCells, group * 3, 3);
         if (digits == null) continue;
         hasGroup = true;
-        final assignments = _assignmentsForRedCount(pattern.redCount);
-        if (assignments.isEmpty) return <String>{};
+        final lockedColors = _lockedColorsForGroup(
+          rowCells,
+          group * 3,
+          3,
+          hitColor: hitColor,
+          missColor: missColor,
+        );
         final groupResults = <String>{};
-        for (final assignment in assignments) {
-          groupResults.addAll(_combinationsForAssignment(digits, assignment));
+        for (final pattern in selection) {
+          if (pattern.isNone) continue;
+          final assignments = _assignmentsForRedCount(
+            pattern.redCount,
+            lockedColors: lockedColors,
+          );
+          for (final assignment in assignments) {
+            groupResults.addAll(_combinationsForAssignment(digits, assignment));
+          }
         }
         if (merged == null) {
           merged = groupResults;
@@ -169,12 +183,28 @@ class GameLogic {
     return digits;
   }
 
-  static List<List<bool>> _assignmentsForRedCount(int redCount) {
+  static List<List<bool>> _assignmentsForRedCount(
+    int redCount, {
+    List<bool?>? lockedColors,
+  }) {
     if (redCount < 0 || redCount > 3) return [];
     final assignments = <List<bool>>[];
     final totalMasks = 1 << 3;
     for (int mask = 0; mask < totalMasks; mask++) {
       if (bitCount(mask) != redCount) continue;
+      if (lockedColors != null && lockedColors.length >= 3) {
+        var matchesLock = true;
+        for (int index = 0; index < 3; index++) {
+          final locked = lockedColors[index];
+          if (locked == null) continue;
+          final isRed = (mask & (1 << index)) != 0;
+          if (locked != isRed) {
+            matchesLock = false;
+            break;
+          }
+        }
+        if (!matchesLock) continue;
+      }
       assignments.add([
         (mask & 1) != 0,
         (mask & 2) != 0,
@@ -182,6 +212,43 @@ class GameLogic {
       ]);
     }
     return assignments;
+  }
+
+  static List<bool?> _lockedColorsForGroup(
+    List<CellData> cells,
+    int startCol,
+    int length, {
+    required Color hitColor,
+    required Color missColor,
+  }) {
+    final result = <bool?>[];
+    if (startCol + length > cells.length) return result;
+    for (int offset = 0; offset < length; offset++) {
+      final cell = cells[startCol + offset];
+      result.add(
+        _lockedRedForCell(
+          cell,
+          hitColor: hitColor,
+          missColor: missColor,
+        ),
+      );
+    }
+    return result;
+  }
+
+  static bool? _lockedRedForCell(
+    CellData cell, {
+    required Color hitColor,
+    required Color missColor,
+  }) {
+    if (!cell.locked || cell.colors.isEmpty) return null;
+    final first = cell.colors.first;
+    for (final color in cell.colors) {
+      if (color.value != first.value) return null;
+    }
+    if (first.value == hitColor.value) return true;
+    if (first.value == missColor.value) return false;
+    return null;
   }
 
   static Set<String> _combinationsForAssignment(

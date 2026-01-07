@@ -15,6 +15,7 @@ import 'game_models.dart';
 import 'game_storage.dart';
 import 'widgets/config_panel.dart';
 import 'widgets/edit_cell_dialog.dart';
+import 'widgets/group_pattern_dialog.dart';
 part 'dye_game_page_state.dart';
 
 class DyeGamePage extends StatefulWidget {

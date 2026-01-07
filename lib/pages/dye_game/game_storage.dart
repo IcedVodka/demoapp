@@ -14,7 +14,6 @@ class GameStorage {
   static const int _rowCount = 9;
   static const int _colCount = 6;
   static const int _groupCount = 2;
-  static const RowPattern _defaultRowPattern = RowPattern.none;
 
   static Future<Map<String, dynamic>?> load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -80,7 +79,7 @@ class GameStorage {
 
   static Future<void> save({
     required List<List<CellData>> cells,
-    required List<List<RowPattern>> groupPatterns,
+    required List<List<Set<RowPattern>>> groupPatterns,
     required CompareMode mode,
     required int threshold,
     required bool cross3Compare,
@@ -110,7 +109,12 @@ class GameStorage {
           .toList(),
       'groupPatterns': groupPatterns
           .map(
-            (row) => row.map((pattern) => pattern.name).toList(),
+            (row) => row
+                .map(
+                  (patterns) =>
+                      patterns.map((pattern) => pattern.name).toList(),
+                )
+                .toList(),
           )
           .toList(),
     };
@@ -169,10 +173,13 @@ class GameStorage {
     return parsed;
   }
 
-  static List<List<RowPattern>> _parseGroupPatterns(dynamic data) {
-    final parsed = List<List<RowPattern>>.generate(
+  static List<List<Set<RowPattern>>> _parseGroupPatterns(dynamic data) {
+    final parsed = List<List<Set<RowPattern>>>.generate(
       _rowCount,
-      (_) => List<RowPattern>.filled(_groupCount, _defaultRowPattern),
+      (_) => List<Set<RowPattern>>.generate(
+        _groupCount,
+        (_) => <RowPattern>{},
+      ),
     );
     if (data is! List) return parsed;
     final rowCount = min(data.length, _rowCount);
@@ -181,13 +188,29 @@ class GameStorage {
       if (rowData is! List) continue;
       final groupCount = min(rowData.length, _groupCount);
       for (int group = 0; group < groupCount; group++) {
-        final name = rowData[group];
-        if (name is! String) continue;
-        final match = RowPattern.values.firstWhere(
-          (pattern) => pattern.name == name,
-          orElse: () => parsed[row][group],
-        );
-        parsed[row][group] = match;
+        final entry = rowData[group];
+        final selection = parsed[row][group];
+        if (entry is String) {
+          final match = RowPattern.values.firstWhere(
+            (pattern) => pattern.name == entry,
+            orElse: () => RowPattern.none,
+          );
+          if (!match.isNone) {
+            selection.add(match);
+          }
+          continue;
+        }
+        if (entry is! List) continue;
+        for (final item in entry) {
+          if (item is! String) continue;
+          final match = RowPattern.values.firstWhere(
+            (pattern) => pattern.name == item,
+            orElse: () => RowPattern.none,
+          );
+          if (!match.isNone) {
+            selection.add(match);
+          }
+        }
       }
     }
     return parsed;
