@@ -363,19 +363,6 @@ class _DyeGamePageState extends State<DyeGamePage> {
     unawaited(_saveState());
   }
 
-  void _randomizeAll() {
-    final rng = Random();
-    setState(() {
-      for (final row in _cells) {
-        for (final cell in row) {
-          if (cell.locked) continue;
-          cell.value = rng.nextInt(10);
-        }
-      }
-    });
-    unawaited(_saveState());
-  }
-
   void _shiftUpAll() {
     setState(() {
       final snapshot = _cells
@@ -905,10 +892,18 @@ class _DyeGamePageState extends State<DyeGamePage> {
   }
 
   int? _groupDiffSum(int row, int group) {
-    if (_mode != CompareMode.vertical) return null;
-    final step = _cross3Compare ? 3 : 1;
-    final targetRow = row + step;
-    if (targetRow >= _rowCount) return null;
+    int? targetRow;
+    if (_mode == CompareMode.vertical) {
+      final step = _cross3Compare ? 3 : 1;
+      targetRow = row + step;
+      if (targetRow >= _rowCount) return null;
+    } else if (_mode == CompareMode.fixed) {
+      final fixedRow = _fixedRow;
+      if (fixedRow == null || fixedRow == row) return null;
+      targetRow = fixedRow;
+    } else {
+      return null;
+    }
     var sum = 0;
     final startCol = group * 3;
     for (int offset = 0; offset < 3; offset++) {
@@ -1139,7 +1134,6 @@ class _DyeGamePageState extends State<DyeGamePage> {
             onThresholdChanged: _updateThreshold,
             onModeChanged: _updateMode,
             onToggleCross3: _toggleCross3,
-            onRandomize: _randomizeAll,
             onShiftUp: _shiftUpAll,
             onShiftDown: _shiftDownAll,
             onClearLocks: _clearAllLocks,

@@ -21,7 +21,6 @@ class GameConfigPanel extends StatelessWidget {
     required this.onThresholdChanged,
     required this.onModeChanged,
     required this.onToggleCross3,
-    required this.onRandomize,
     required this.onShiftUp,
     required this.onShiftDown,
     required this.onClearLocks,
@@ -40,7 +39,6 @@ class GameConfigPanel extends StatelessWidget {
   final ValueChanged<int> onThresholdChanged;
   final ValueChanged<CompareMode> onModeChanged;
   final VoidCallback onToggleCross3;
-  final VoidCallback onRandomize;
   final VoidCallback onShiftUp;
   final VoidCallback onShiftDown;
   final VoidCallback onClearLocks;
@@ -452,22 +450,6 @@ class GameConfigPanel extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      OutlinedButton.icon(
-                        onPressed: onRandomize,
-                        icon: const Icon(Icons.casino, size: 16),
-                        label: const Text('全体随机'),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 12,
-                          ),
-                          textStyle: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
                       OutlinedButton.icon(
                         onPressed: onShiftUp,
                         icon: const Icon(Icons.arrow_upward, size: 16),

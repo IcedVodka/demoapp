@@ -846,13 +846,13 @@ class CalculationPanelState extends State<CalculationPanel> {
       _Option(_SizePattern.small3, '3小'),
       _Option(_SizePattern.small2big1, '2小'),
       _Option(_SizePattern.small1big2, '1小'),
-      _Option(_SizePattern.big3, '0小'),
+      _Option(_SizePattern.big3, '3大'),
     ];
     const parityOptions = [
       _Option(_ParityPattern.odd3, '3奇'),
       _Option(_ParityPattern.odd2even1, '2奇'),
       _Option(_ParityPattern.odd1even2, '1奇'),
-      _Option(_ParityPattern.even3, '0奇'),
+      _Option(_ParityPattern.even3, '3偶'),
     ];
     const shapeOptions = [
       _Option(_ShapePattern.concave, '凹型'),
