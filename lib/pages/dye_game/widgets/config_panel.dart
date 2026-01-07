@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../models/cell_data.dart';
 import '../../../models/compare_mode.dart';
+import '../../../models/distance_filter.dart';
 import '../../../utils/color_utils.dart';
 
 class GameConfigPanel extends StatelessWidget {
@@ -13,7 +14,10 @@ class GameConfigPanel extends StatelessWidget {
     required this.mode,
     required this.cross3Compare,
     required this.cells,
+    required this.distanceFilters,
     required this.baseColor,
+    required this.hitColor,
+    required this.missColor,
     required this.onThresholdChanged,
     required this.onModeChanged,
     required this.onToggleCross3,
@@ -22,13 +26,17 @@ class GameConfigPanel extends StatelessWidget {
     required this.onShiftDown,
     required this.onClearLocks,
     required this.onRecolor,
+    required this.onToggleDistanceFilter,
   });
 
   final int threshold;
   final CompareMode mode;
   final bool cross3Compare;
   final List<List<CellData>> cells;
+  final List<DistanceFilter> distanceFilters;
   final Color baseColor;
+  final Color hitColor;
+  final Color missColor;
   final ValueChanged<int> onThresholdChanged;
   final ValueChanged<CompareMode> onModeChanged;
   final VoidCallback onToggleCross3;
@@ -37,6 +45,7 @@ class GameConfigPanel extends StatelessWidget {
   final VoidCallback onShiftDown;
   final VoidCallback onClearLocks;
   final VoidCallback onRecolor;
+  final ValueChanged<int> onToggleDistanceFilter;
 
   int _digitColumnIndex(int col) => col % 3;
 
@@ -151,6 +160,69 @@ class GameConfigPanel extends StatelessWidget {
       onTap: onTap,
       icon: icon,
       label: label,
+    );
+  }
+
+  Color _distanceFilterColor(DistanceFilter filter) {
+    switch (filter) {
+      case DistanceFilter.red:
+        return hitColor;
+      case DistanceFilter.blue:
+        return missColor;
+      case DistanceFilter.none:
+        return baseColor;
+    }
+  }
+
+  Widget _distanceFilterCell(int index, double size) {
+    final filter =
+        index < distanceFilters.length ? distanceFilters[index] : DistanceFilter.none;
+    final color = _distanceFilterColor(filter);
+    final borderRadius = BorderRadius.circular(10);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => onToggleDistanceFilter(index),
+        borderRadius: borderRadius,
+        child: SizedBox(
+          width: size,
+          height: size,
+          child: _LockDisplayCell(
+            value: null,
+            colors: List<Color>.filled(4, color, growable: false),
+            baseColor: baseColor,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDistanceFilters() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const gap = 4.0;
+        final halfGap = gap / 2;
+        final maxWidth = constraints.maxWidth;
+        const columnCount = 3;
+        final availableWidth = maxWidth - gap * columnCount;
+        final cellSize = min<double>(
+          36.0,
+          availableWidth > 0 ? availableWidth / columnCount : 0.0,
+        );
+        if (cellSize <= 0) {
+          return const SizedBox.shrink();
+        }
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: List.generate(
+            columnCount,
+            (index) => Padding(
+              padding: EdgeInsets.symmetric(horizontal: halfGap),
+              child: _distanceFilterCell(index, cellSize),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -443,6 +515,8 @@ class GameConfigPanel extends StatelessWidget {
                           visualDensity: VisualDensity.compact,
                         ),
                       ),
+                      const SizedBox(height: 8),
+                      _buildDistanceFilters(),
                     ],
                   ),
                 ),

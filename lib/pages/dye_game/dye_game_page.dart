@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../models/cell_data.dart';
 import '../../models/compare_mode.dart';
 import '../../models/diff_marker.dart';
+import '../../models/distance_filter.dart';
 import '../../utils/color_utils.dart';
 import '../../widgets/calculation_panel.dart';
 import '../../widgets/number_grid.dart';

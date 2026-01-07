@@ -16,6 +16,8 @@ class _DyeGamePageState extends State<DyeGamePage> {
   Color _missColor = const Color(0xFF1E88E5);
   final GlobalKey<CalculationPanelState> _calculationPanelKey =
       GlobalKey<CalculationPanelState>();
+  List<DistanceFilter> _distanceFilters =
+      List<DistanceFilter>.filled(3, DistanceFilter.none);
 
   final List<List<CellData>> _cells = List.generate(
     _rowCount,
@@ -909,6 +911,27 @@ class _DyeGamePageState extends State<DyeGamePage> {
     _showCombinationDialog('总计算结果', results.toList());
   }
 
+  void _handleDistanceFiltersChanged(List<DistanceFilter> filters) {
+    setState(() {
+      _distanceFilters = List<DistanceFilter>.from(filters);
+    });
+  }
+
+  void _toggleDistanceFilter(int index) {
+    final panelState = _calculationPanelKey.currentState;
+    if (panelState != null) {
+      panelState.toggleDistanceFilter(index);
+      return;
+    }
+    setState(() {
+      final nextFilters = List<DistanceFilter>.from(_distanceFilters);
+      final current = nextFilters[index];
+      nextFilters[index] = DistanceFilter
+          .values[(current.index + 1) % DistanceFilter.values.length];
+      _distanceFilters = nextFilters;
+    });
+  }
+
   Future<void> _editCell(int row, int col) async {
     final cell = _cells[row][col];
     await showModalBottomSheet<void>(
@@ -1076,7 +1099,10 @@ class _DyeGamePageState extends State<DyeGamePage> {
             mode: _mode,
             cross3Compare: _cross3Compare,
             cells: _cells,
+            distanceFilters: _distanceFilters,
             baseColor: _baseColor,
+            hitColor: _hitColor,
+            missColor: _missColor,
             onThresholdChanged: _updateThreshold,
             onModeChanged: _updateMode,
             onToggleCross3: _toggleCross3,
@@ -1085,6 +1111,7 @@ class _DyeGamePageState extends State<DyeGamePage> {
             onShiftDown: _shiftDownAll,
             onClearLocks: _clearAllLocks,
             onRecolor: _recolor,
+            onToggleDistanceFilter: _toggleDistanceFilter,
           ),
         );
         return SingleChildScrollView(
@@ -1148,6 +1175,7 @@ class _DyeGamePageState extends State<DyeGamePage> {
               baseColor: _baseColor,
               onCustomCalculate: _calculateCustom,
               onTotalCalculate: _calculateTotal,
+              onDistanceFiltersChanged: _handleDistanceFiltersChanged,
             ),
           ],
         ),

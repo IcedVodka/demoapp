@@ -226,7 +226,9 @@ class NumberGrid extends StatelessWidget {
         ];
 
         if (showFixedSelectors) {
-          final selectorLeft = gridStartX - selectorGap - selectorExtent;
+          final selectorLeft = leftSummaryEnabled
+              ? leftSummaryStartX - selectorGap - selectorExtent
+              : gridStartX - selectorGap - selectorExtent;
           final selectorTop = gridStartY - selectorGap - selectorExtent;
           Widget selectorBox({
             required bool selected,

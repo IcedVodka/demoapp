@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/distance_filter.dart';
 import '../utils/color_utils.dart';
 
 class CalculationPanel extends StatefulWidget {
@@ -16,6 +17,7 @@ class CalculationPanel extends StatefulWidget {
     required this.baseColor,
     this.onCustomCalculate,
     this.onTotalCalculate,
+    this.onDistanceFiltersChanged,
   });
 
   final List<String> Function() baseCombinationsBuilder;
@@ -24,6 +26,7 @@ class CalculationPanel extends StatefulWidget {
   final Color baseColor;
   final VoidCallback? onCustomCalculate;
   final VoidCallback? onTotalCalculate;
+  final ValueChanged<List<DistanceFilter>>? onDistanceFiltersChanged;
 
   @override
   State<CalculationPanel> createState() => CalculationPanelState();
@@ -55,12 +58,6 @@ enum _ConsecutivePattern {
   two,
   three,
   none,
-}
-
-enum _DistanceFilter {
-  none,
-  red,
-  blue,
 }
 
 class _RouteRequirement {
@@ -95,8 +92,8 @@ class CalculationPanelState extends State<CalculationPanel> {
   final Set<_ConsecutivePattern> _consecutivePatterns = {};
   final List<Set<int>> _routeFilters =
       List.generate(3, (_) => <int>{});
-  final List<_DistanceFilter> _distanceFilters =
-      List.filled(3, _DistanceFilter.none);
+  final List<DistanceFilter> _distanceFilters =
+      List.filled(3, DistanceFilter.none);
 
   @override
   void initState() {
@@ -164,14 +161,25 @@ class CalculationPanelState extends State<CalculationPanel> {
     unawaited(_saveConfig());
   }
 
+  List<DistanceFilter> get distanceFilters =>
+      List<DistanceFilter>.from(_distanceFilters);
+
+  void toggleDistanceFilter(int index) => _toggleDistanceFilter(index);
+
+  void _notifyDistanceFilters() {
+    widget.onDistanceFiltersChanged
+        ?.call(List<DistanceFilter>.from(_distanceFilters));
+  }
+
   void _toggleDistanceFilter(int index) {
     setState(() {
       final current = _distanceFilters[index];
-      final next =
-          _DistanceFilter.values[(current.index + 1) % _DistanceFilter.values.length];
+      final next = DistanceFilter
+          .values[(current.index + 1) % DistanceFilter.values.length];
       _distanceFilters[index] = next;
     });
     unawaited(_saveConfig());
+    _notifyDistanceFilters();
   }
 
   Future<Set<int>?> _showCountPicker({
@@ -264,17 +272,17 @@ class CalculationPanelState extends State<CalculationPanel> {
     return result;
   }
 
-  List<_DistanceFilter> _distanceFiltersFrom(dynamic data) {
-    final result = List<_DistanceFilter>.filled(
+  List<DistanceFilter> _distanceFiltersFrom(dynamic data) {
+    final result = List<DistanceFilter>.filled(
       3,
-      _DistanceFilter.none,
+      DistanceFilter.none,
     );
     if (data is! List) return result;
     for (int index = 0; index < result.length; index++) {
       if (index >= data.length) break;
       final name = data[index];
       if (name is! String) continue;
-      final match = _DistanceFilter.values.firstWhere(
+      final match = DistanceFilter.values.firstWhere(
         (value) => value.name == name,
         orElse: () => result[index],
       );
@@ -378,6 +386,7 @@ class CalculationPanelState extends State<CalculationPanel> {
         _distanceFilters[index] = distanceFilters[index];
       }
     });
+    _notifyDistanceFilters();
   }
 
   Future<void> _saveConfig() async {
@@ -421,10 +430,11 @@ class CalculationPanelState extends State<CalculationPanel> {
         filter.clear();
       }
       for (int index = 0; index < _distanceFilters.length; index++) {
-        _distanceFilters[index] = _DistanceFilter.none;
+        _distanceFilters[index] = DistanceFilter.none;
       }
     });
     unawaited(_saveConfig());
+    _notifyDistanceFilters();
   }
 
   void _showResultDialog(List<String> combinations) {
@@ -498,7 +508,7 @@ class CalculationPanelState extends State<CalculationPanel> {
     final hasRouteFilter =
         _routeFilters.any((filter) => filter.isNotEmpty);
     final hasDistanceFilter =
-        _distanceFilters.any((filter) => filter != _DistanceFilter.none);
+        _distanceFilters.any((filter) => filter != DistanceFilter.none);
     return _digitCountSelections.isEmpty &&
         _mod3Remainders.isEmpty &&
         _sumTailDigits.isEmpty &&
@@ -535,25 +545,14 @@ class CalculationPanelState extends State<CalculationPanel> {
     return min(diff, 10 - diff);
   }
 
-  bool _matchesDistanceFilter(_DistanceFilter filter, int diff) {
+  bool _matchesDistanceFilter(DistanceFilter filter, int diff) {
     switch (filter) {
-      case _DistanceFilter.none:
+      case DistanceFilter.none:
         return true;
-      case _DistanceFilter.red:
+      case DistanceFilter.red:
         return diff <= 3;
-      case _DistanceFilter.blue:
+      case DistanceFilter.blue:
         return diff > 3;
-    }
-  }
-
-  Color _distanceFilterColor(_DistanceFilter filter) {
-    switch (filter) {
-      case _DistanceFilter.red:
-        return widget.hitColor;
-      case _DistanceFilter.blue:
-        return widget.missColor;
-      case _DistanceFilter.none:
-        return widget.baseColor;
     }
   }
 
@@ -561,6 +560,12 @@ class CalculationPanelState extends State<CalculationPanel> {
     if (counts.isEmpty) return '不限';
     final sorted = counts.toList()..sort();
     return sorted.join(',');
+  }
+
+  String _digitCountLabel(int digit, Set<int> counts) {
+    if (counts.isEmpty) return '$digit：不限';
+    final sorted = counts.toList()..sort();
+    return '$digit：${sorted.join('，')}次';
   }
 
   List<Widget> _withSpacing(List<Widget> children, double spacing) {
@@ -834,47 +839,6 @@ class CalculationPanelState extends State<CalculationPanel> {
     );
   }
 
-  Widget _distanceFilterCell(int index) {
-    final color = _distanceFilterColor(_distanceFilters[index]);
-    final borderRadius = BorderRadius.circular(8);
-    return InkWell(
-      onTap: () => _toggleDistanceFilter(index),
-      borderRadius: borderRadius,
-      child: AspectRatio(
-        aspectRatio: 1,
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: borderRadius,
-            border: Border.all(color: Colors.black26),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(7),
-            child: Column(
-              children: [
-                Expanded(
-                  child: Row(
-                    children: [
-                      Expanded(child: Container(color: color)),
-                      Expanded(child: Container(color: color)),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: Row(
-                    children: [
-                      Expanded(child: Container(color: color)),
-                      Expanded(child: Container(color: color)),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     const divider = Divider(height: 20, color: Colors.black12);
@@ -976,24 +940,6 @@ class CalculationPanelState extends State<CalculationPanel> {
         ),
         const SizedBox(height: 12),
         _section(
-          title: '距离筛选',
-          subtitle: '依次为百十、十个、个百',
-          child: Column(
-            children: [
-              Row(
-                children: _withSpacing(
-                  List.generate(
-                    3,
-                    (index) => Expanded(child: _distanceFilterCell(index)),
-                  ),
-                  8,
-                ),
-              ),
-            ],
-          ),
-        ),
-        divider,
-        _section(
           title: '必选',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1015,8 +961,10 @@ class CalculationPanelState extends State<CalculationPanel> {
                       .map(
                         (digit) => _toggleChip(
                           selected: true,
-                          label:
-                              '$digit次:${_countsLabel(_digitCountSelections[digit] ?? const <int>{})}',
+                          label: _digitCountLabel(
+                            digit,
+                            _digitCountSelections[digit] ?? const <int>{},
+                          ),
                           onTap: () => _editDigitCounts(digit),
                         ),
                       )
