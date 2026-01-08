@@ -648,7 +648,7 @@ class CalculationPanelState extends State<CalculationPanel> {
     return spaced;
   }
 
-  Widget _scrollRow(List<Widget> children, {double spacing = 8}) {
+  Widget _scrollRow(List<Widget> children, {double spacing = 6}) {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(children: _withSpacing(children, spacing)),
@@ -842,7 +842,7 @@ class CalculationPanelState extends State<CalculationPanel> {
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
         decoration: BoxDecoration(
           color: backgroundColor,
           borderRadius: BorderRadius.circular(10),
@@ -851,7 +851,7 @@ class CalculationPanelState extends State<CalculationPanel> {
         child: Text(
           label,
           style: TextStyle(
-            fontSize: 12,
+            fontSize: 11,
             fontWeight: FontWeight.w600,
             color: textColor,
           ),
@@ -862,7 +862,7 @@ class CalculationPanelState extends State<CalculationPanel> {
 
   Widget _staticChip(String label) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
       decoration: BoxDecoration(
         color: kSelectionFillColor,
         borderRadius: BorderRadius.circular(10),
@@ -871,7 +871,7 @@ class CalculationPanelState extends State<CalculationPanel> {
       child: Text(
         label,
         style: const TextStyle(
-          fontSize: 12,
+          fontSize: 11,
           fontWeight: FontWeight.w600,
           color: kSelectionColor,
         ),
@@ -1063,7 +1063,7 @@ class CalculationPanelState extends State<CalculationPanel> {
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
-                            child: const Text('添加一组'),
+                            child: const Text('添加'),
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -1079,7 +1079,7 @@ class CalculationPanelState extends State<CalculationPanel> {
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
-                            child: const Text('删除最近一组'),
+                            child: const Text('删除'),
                           ),
                         ),
                       ],
@@ -1192,7 +1192,7 @@ class CalculationPanelState extends State<CalculationPanel> {
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
-                            child: const Text('添加一组'),
+                            child: const Text('添加'),
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -1209,7 +1209,7 @@ class CalculationPanelState extends State<CalculationPanel> {
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
-                            child: const Text('删除最近一组'),
+                            child: const Text('删除'),
                           ),
                         ),
                       ],

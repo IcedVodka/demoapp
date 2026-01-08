@@ -1183,7 +1183,7 @@ class _DyeGamePageState extends State<DyeGamePage> {
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1212,7 +1212,7 @@ class _DyeGamePageState extends State<DyeGamePage> {
 
   Widget _buildCalculationPage() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final lockPanel = ConstrainedBox(
