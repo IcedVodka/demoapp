@@ -60,18 +60,6 @@ enum _ConsecutivePattern {
   none,
 }
 
-class _RouteRequirement {
-  final int route0;
-  final int route1;
-  final int route2;
-
-  const _RouteRequirement({
-    required this.route0,
-    required this.route1,
-    required this.route2,
-  });
-}
-
 class _Option<T> {
   final T value;
   final String label;
@@ -79,10 +67,37 @@ class _Option<T> {
   const _Option(this.value, this.label);
 }
 
+class _DanGroup {
+  final Set<int> digits;
+  final Set<int> counts;
+
+  const _DanGroup({
+    required this.digits,
+    required this.counts,
+  });
+}
+
+class _RouteGroup {
+  final Set<int> routes;
+  final Set<int> counts;
+
+  const _RouteGroup({
+    required this.routes,
+    required this.counts,
+  });
+}
+
 class CalculationPanelState extends State<CalculationPanel> {
   static const String _storageKey = 'calculation_panel_config_v1';
+  static const int _maxDanGroups = 4;
+  static const int _maxRouteGroups = 4;
 
-  final Map<int, Set<int>> _digitCountSelections = {};
+  final List<_DanGroup> _danGroups = [];
+  final Set<int> _draftDanDigits = {};
+  final Set<int> _draftDanCounts = {};
+  final List<_RouteGroup> _routeGroups = [];
+  final Set<int> _draftRouteRemainders = {};
+  final Set<int> _draftRouteCounts = {};
   final Set<int> _mod3Remainders = {};
   final Set<int> _sumTailDigits = {};
   final Set<_SizePattern> _sizePatterns = {};
@@ -90,8 +105,6 @@ class CalculationPanelState extends State<CalculationPanel> {
   final Set<int> _spanDiffs = {};
   final Set<_ShapePattern> _shapePatterns = {};
   final Set<_ConsecutivePattern> _consecutivePatterns = {};
-  final List<Set<int>> _routeFilters =
-      List.generate(3, (_) => <int>{});
   final List<DistanceFilter> _distanceFilters =
       List.filled(3, DistanceFilter.none);
 
@@ -117,46 +130,90 @@ class CalculationPanelState extends State<CalculationPanel> {
     unawaited(_saveConfig());
   }
 
-  void _toggleDigit(int digit) {
+  void _toggleDanDigit(int digit) {
     setState(() {
-      if (_digitCountSelections.containsKey(digit)) {
-        _digitCountSelections.remove(digit);
+      if (_draftDanDigits.contains(digit)) {
+        _draftDanDigits.remove(digit);
       } else {
-        _digitCountSelections[digit] = {1};
+        _draftDanDigits.add(digit);
       }
+    });
+  }
+
+  void _toggleDanCount(int count) {
+    setState(() {
+      if (_draftDanCounts.contains(count)) {
+        _draftDanCounts.remove(count);
+      } else {
+        _draftDanCounts.add(count);
+      }
+    });
+  }
+
+  void _addDanGroup() {
+    if (_draftDanDigits.isEmpty || _draftDanCounts.isEmpty) return;
+    if (_danGroups.length >= _maxDanGroups) return;
+    setState(() {
+      _danGroups.add(
+        _DanGroup(
+          digits: Set<int>.from(_draftDanDigits),
+          counts: Set<int>.from(_draftDanCounts),
+        ),
+      );
+      _draftDanDigits.clear();
+      _draftDanCounts.clear();
     });
     unawaited(_saveConfig());
   }
 
-  Future<void> _editDigitCounts(int digit) async {
-    final current = _digitCountSelections[digit] ?? {1};
-    final result = await _showCountPicker(
-      title: '数字$digit出现次数',
-      options: const [1, 2, 3],
-      initial: current,
-    );
-    if (result == null) return;
+  void _removeLastDanGroup() {
+    if (_danGroups.isEmpty) return;
     setState(() {
-      if (result.isEmpty) {
-        _digitCountSelections.remove(digit);
-      } else {
-        _digitCountSelections[digit] = result;
-      }
+      _danGroups.removeLast();
     });
     unawaited(_saveConfig());
   }
 
-  Future<void> _editRouteCounts(int index) async {
-    final result = await _showCountPicker(
-      title: '${index}路筛选',
-      options: const [0, 1, 2, 3],
-      initial: _routeFilters[index],
-    );
-    if (result == null) return;
+  void _toggleRouteRemainder(int remainder) {
     setState(() {
-      _routeFilters[index]
-        ..clear()
-        ..addAll(result);
+      if (_draftRouteRemainders.contains(remainder)) {
+        _draftRouteRemainders.remove(remainder);
+      } else {
+        _draftRouteRemainders.add(remainder);
+      }
+    });
+  }
+
+  void _toggleRouteCount(int count) {
+    setState(() {
+      if (_draftRouteCounts.contains(count)) {
+        _draftRouteCounts.remove(count);
+      } else {
+        _draftRouteCounts.add(count);
+      }
+    });
+  }
+
+  void _addRouteGroup() {
+    if (_draftRouteRemainders.isEmpty || _draftRouteCounts.isEmpty) return;
+    if (_routeGroups.length >= _maxRouteGroups) return;
+    setState(() {
+      _routeGroups.add(
+        _RouteGroup(
+          routes: Set<int>.from(_draftRouteRemainders),
+          counts: Set<int>.from(_draftRouteCounts),
+        ),
+      );
+      _draftRouteRemainders.clear();
+      _draftRouteCounts.clear();
+    });
+    unawaited(_saveConfig());
+  }
+
+  void _removeLastRouteGroup() {
+    if (_routeGroups.isEmpty) return;
+    setState(() {
+      _routeGroups.removeLast();
     });
     unawaited(_saveConfig());
   }
@@ -182,58 +239,6 @@ class CalculationPanelState extends State<CalculationPanel> {
     _notifyDistanceFilters();
   }
 
-  Future<Set<int>?> _showCountPicker({
-    required String title,
-    required List<int> options,
-    required Set<int> initial,
-  }) {
-    final selected = Set<int>.from(initial);
-    return showDialog<Set<int>>(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: Text(title),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: options
-                    .map(
-                      (value) => CheckboxListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        value: selected.contains(value),
-                        title: Text('出现$value次'),
-                        onChanged: (checked) {
-                          setState(() {
-                            if (checked == true) {
-                              selected.add(value);
-                            } else {
-                              selected.remove(value);
-                            }
-                          });
-                        },
-                      ),
-                    )
-                    .toList(),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('取消'),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(selected),
-                  child: const Text('确定'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
   Set<int> _intSetFrom(dynamic data) {
     if (data is! List) return {};
     final result = <int>{};
@@ -245,29 +250,105 @@ class CalculationPanelState extends State<CalculationPanel> {
     return result;
   }
 
-  Map<int, Set<int>> _digitCountsFrom(dynamic data) {
-    final result = <int, Set<int>>{};
+  Set<int> _danDigitsFrom(dynamic data) {
+    final digits = _intSetFrom(data);
+    digits.removeWhere((value) => value < 0 || value > 9);
+    return digits;
+  }
+
+  Set<int> _danCountsFrom(dynamic data) {
+    final counts = _intSetFrom(data);
+    counts.removeWhere((value) => value < 1 || value > 3);
+    return counts;
+  }
+
+  List<_DanGroup> _danGroupsFrom(dynamic data) {
+    final result = <_DanGroup>[];
     if (data is! List) return result;
     for (final entry in data) {
       if (entry is! Map) continue;
-      final digitValue = entry['digit'];
-      final countsValue = entry['counts'];
-      if (digitValue is! num) continue;
-      final digit = digitValue.toInt();
-      if (digit < 0 || digit > 9) continue;
-      final counts = _intSetFrom(countsValue);
-      if (counts.isEmpty) continue;
-      result[digit] = counts;
+      final digits = _danDigitsFrom(entry['digits']);
+      final counts = _danCountsFrom(entry['counts']);
+      if (digits.isEmpty || counts.isEmpty) continue;
+      result.add(
+        _DanGroup(
+          digits: Set<int>.from(digits),
+          counts: Set<int>.from(counts),
+        ),
+      );
+      if (result.length >= _maxDanGroups) break;
     }
     return result;
   }
 
-  List<Set<int>> _routeFiltersFrom(dynamic data) {
-    final result = List.generate(3, (_) => <int>{});
+  Set<int> _routeRemaindersFrom(dynamic data) {
+    final routes = _intSetFrom(data);
+    routes.removeWhere((value) => value < 0 || value > 2);
+    return routes;
+  }
+
+  Set<int> _routeCountsFrom(dynamic data) {
+    final counts = _intSetFrom(data);
+    counts.removeWhere((value) => value < 1 || value > 3);
+    return counts;
+  }
+
+  List<_RouteGroup> _routeGroupsFrom(dynamic data) {
+    final result = <_RouteGroup>[];
     if (data is! List) return result;
-    for (int index = 0; index < result.length; index++) {
+    for (final entry in data) {
+      if (entry is! Map) continue;
+      final routes = _routeRemaindersFrom(entry['routes']);
+      final counts = _routeCountsFrom(entry['counts']);
+      if (routes.isEmpty || counts.isEmpty) continue;
+      result.add(
+        _RouteGroup(
+          routes: Set<int>.from(routes),
+          counts: Set<int>.from(counts),
+        ),
+      );
+      if (result.length >= _maxRouteGroups) break;
+    }
+    return result;
+  }
+
+  List<_RouteGroup> _routeGroupsFromLegacyFilters(dynamic data) {
+    final result = <_RouteGroup>[];
+    if (data is! List) return result;
+    for (int index = 0; index < 3; index++) {
       if (index >= data.length) break;
-      result[index] = _intSetFrom(data[index]);
+      final counts = _routeCountsFrom(data[index]);
+      if (counts.isEmpty) continue;
+      result.add(
+        _RouteGroup(
+          routes: {index},
+          counts: Set<int>.from(counts),
+        ),
+      );
+      if (result.length >= _maxRouteGroups) break;
+    }
+    return result;
+  }
+
+  List<_RouteGroup> _routeGroupsFromLegacyValues(
+    List<dynamic> values,
+  ) {
+    final result = <_RouteGroup>[];
+    for (int index = 0; index < 3; index++) {
+      if (index >= values.length) break;
+      final value = values[index];
+      if (value is num) {
+        final count = value.toInt().clamp(0, 3);
+        if (count >= 1 && count <= 3) {
+          result.add(
+            _RouteGroup(
+              routes: {index},
+              counts: {count},
+            ),
+          );
+        }
+      }
+      if (result.length >= _maxRouteGroups) break;
     }
     return result;
   }
@@ -319,13 +400,7 @@ class CalculationPanelState extends State<CalculationPanel> {
     final decoded = jsonDecode(raw);
     if (decoded is! Map<String, dynamic>) return;
 
-    final digitCounts = _digitCountsFrom(decoded['digitCounts']);
-    final mustHave = _intSetFrom(decoded['mustHave']);
-    if (digitCounts.isEmpty && mustHave.isNotEmpty) {
-      for (final digit in mustHave) {
-        digitCounts[digit] = {1};
-      }
-    }
+    final danGroups = _danGroupsFrom(decoded['danGroups']);
     final mod3 = _intSetFrom(decoded['mod3']);
     final sumTail = _intSetFrom(decoded['sumTail']);
     final span = _intSetFrom(decoded['span']);
@@ -334,28 +409,24 @@ class CalculationPanelState extends State<CalculationPanel> {
     final shape = _enumSetFromNames(_ShapePattern.values, decoded['shape']);
     final consecutive =
         _enumSetFromNames(_ConsecutivePattern.values, decoded['consecutive']);
-    final routeFilters = _routeFiltersFrom(decoded['routeFilters']);
-    if (routeFilters.every((set) => set.isEmpty)) {
-      final legacyValues = [
+    var routeGroups = _routeGroupsFrom(decoded['routeGroups']);
+    if (routeGroups.isEmpty) {
+      routeGroups = _routeGroupsFromLegacyFilters(decoded['routeFilters']);
+    }
+    if (routeGroups.isEmpty) {
+      routeGroups = _routeGroupsFromLegacyValues([
         decoded['route0'],
         decoded['route1'],
         decoded['route2'],
-      ];
-      for (int index = 0; index < legacyValues.length; index++) {
-        final value = legacyValues[index];
-        if (value is num) {
-          final count = value.toInt().clamp(0, 3);
-          routeFilters[index].add(count);
-        }
-      }
+      ]);
     }
     final distanceFilters = _distanceFiltersFrom(decoded['distanceFilters']);
 
     if (!mounted) return;
     setState(() {
-      _digitCountSelections
+      _danGroups
         ..clear()
-        ..addAll(digitCounts);
+        ..addAll(danGroups);
       _mod3Remainders
         ..clear()
         ..addAll(mod3);
@@ -377,11 +448,9 @@ class CalculationPanelState extends State<CalculationPanel> {
       _consecutivePatterns
         ..clear()
         ..addAll(consecutive);
-      for (int index = 0; index < _routeFilters.length; index++) {
-        _routeFilters[index]
-          ..clear()
-          ..addAll(routeFilters[index]);
-      }
+      _routeGroups
+        ..clear()
+        ..addAll(routeGroups);
       for (int index = 0; index < _distanceFilters.length; index++) {
         _distanceFilters[index] = distanceFilters[index];
       }
@@ -392,12 +461,11 @@ class CalculationPanelState extends State<CalculationPanel> {
   Future<void> _saveConfig() async {
     final prefs = await SharedPreferences.getInstance();
     final data = <String, dynamic>{
-      'mustHave': _sortedInts(_digitCountSelections.keys.toSet()),
-      'digitCounts': _digitCountSelections.entries
+      'danGroups': _danGroups
           .map(
-            (entry) => {
-              'digit': entry.key,
-              'counts': _sortedInts(entry.value),
+            (group) => {
+              'digits': _sortedInts(group.digits),
+              'counts': _sortedInts(group.counts),
             },
           )
           .toList(),
@@ -409,7 +477,14 @@ class CalculationPanelState extends State<CalculationPanel> {
       'shape': _shapePatterns.map((value) => value.name).toList(),
       'consecutive':
           _consecutivePatterns.map((value) => value.name).toList(),
-      'routeFilters': _routeFilters.map(_sortedInts).toList(),
+      'routeGroups': _routeGroups
+          .map(
+            (group) => {
+              'routes': _sortedInts(group.routes),
+              'counts': _sortedInts(group.counts),
+            },
+          )
+          .toList(),
       'distanceFilters':
           _distanceFilters.map((value) => value.name).toList(),
     };
@@ -418,7 +493,12 @@ class CalculationPanelState extends State<CalculationPanel> {
 
   void _clearAllFilters() {
     setState(() {
-      _digitCountSelections.clear();
+      _danGroups.clear();
+      _draftDanDigits.clear();
+      _draftDanCounts.clear();
+      _routeGroups.clear();
+      _draftRouteRemainders.clear();
+      _draftRouteCounts.clear();
       _mod3Remainders.clear();
       _sumTailDigits.clear();
       _sizePatterns.clear();
@@ -426,9 +506,6 @@ class CalculationPanelState extends State<CalculationPanel> {
       _spanDiffs.clear();
       _shapePatterns.clear();
       _consecutivePatterns.clear();
-      for (final filter in _routeFilters) {
-        filter.clear();
-      }
       for (int index = 0; index < _distanceFilters.length; index++) {
         _distanceFilters[index] = DistanceFilter.none;
       }
@@ -505,11 +582,9 @@ class CalculationPanelState extends State<CalculationPanel> {
   }
 
   bool _noFiltersSelected() {
-    final hasRouteFilter =
-        _routeFilters.any((filter) => filter.isNotEmpty);
     final hasDistanceFilter =
         _distanceFilters.any((filter) => filter != DistanceFilter.none);
-    return _digitCountSelections.isEmpty &&
+    return _danGroups.isEmpty &&
         _mod3Remainders.isEmpty &&
         _sumTailDigits.isEmpty &&
         _sizePatterns.isEmpty &&
@@ -517,7 +592,7 @@ class CalculationPanelState extends State<CalculationPanel> {
         _spanDiffs.isEmpty &&
         _shapePatterns.isEmpty &&
         _consecutivePatterns.isEmpty &&
-        !hasRouteFilter &&
+        _routeGroups.isEmpty &&
         !hasDistanceFilter;
   }
 
@@ -528,16 +603,6 @@ class CalculationPanelState extends State<CalculationPanel> {
       combination.codeUnitAt(1) - 48,
       combination.codeUnitAt(2) - 48,
     ];
-  }
-
-  List<int> _digitCountsFor(List<int> digits) {
-    final counts = List<int>.filled(10, 0);
-    for (final digit in digits) {
-      if (digit >= 0 && digit < counts.length) {
-        counts[digit]++;
-      }
-    }
-    return counts;
   }
 
   int _digitDiff(int a, int b) {
@@ -556,16 +621,20 @@ class CalculationPanelState extends State<CalculationPanel> {
     }
   }
 
-  String _countsLabel(Set<int> counts) {
-    if (counts.isEmpty) return '不限';
-    final sorted = counts.toList()..sort();
-    return sorted.join(',');
+  String _danGroupLabel(_DanGroup group) {
+    final digits = group.digits.toList()..sort();
+    final counts = group.counts.toList()..sort();
+    final digitLabel = digits.join(',');
+    final countLabel = counts.join(',');
+    return '$digitLabel-$countLabel';
   }
 
-  String _digitCountLabel(int digit, Set<int> counts) {
-    if (counts.isEmpty) return '$digit：不限';
-    final sorted = counts.toList()..sort();
-    return '$digit：${sorted.join('，')}次';
+  String _routeGroupLabel(_RouteGroup group) {
+    final routes = group.routes.toList()..sort();
+    final counts = group.counts.toList()..sort();
+    final routeLabel = routes.join(',');
+    final countLabel = counts.join(',');
+    return '$routeLabel路-$countLabel';
   }
 
   List<Widget> _withSpacing(List<Widget> children, double spacing) {
@@ -587,13 +656,15 @@ class CalculationPanelState extends State<CalculationPanel> {
   }
 
   bool _matchesFilters(List<int> digits) {
-    if (_digitCountSelections.isNotEmpty) {
-      final counts = _digitCountsFor(digits);
-      for (final entry in _digitCountSelections.entries) {
-        final digit = entry.key;
-        final allowed = entry.value;
-        if (allowed.isEmpty) continue;
-        if (!allowed.contains(counts[digit])) {
+    if (_danGroups.isNotEmpty) {
+      for (final group in _danGroups) {
+        var hitCount = 0;
+        for (final digit in digits) {
+          if (group.digits.contains(digit)) {
+            hitCount++;
+          }
+        }
+        if (!group.counts.contains(hitCount)) {
           return false;
         }
       }
@@ -620,18 +691,18 @@ class CalculationPanelState extends State<CalculationPanel> {
       }
     }
 
-    final routeCounts = _routeCountsFor(digits);
-    if (_routeFilters[0].isNotEmpty &&
-        !_routeFilters[0].contains(routeCounts.route0)) {
-      return false;
-    }
-    if (_routeFilters[1].isNotEmpty &&
-        !_routeFilters[1].contains(routeCounts.route1)) {
-      return false;
-    }
-    if (_routeFilters[2].isNotEmpty &&
-        !_routeFilters[2].contains(routeCounts.route2)) {
-      return false;
+    if (_routeGroups.isNotEmpty) {
+      for (final group in _routeGroups) {
+        var hitCount = 0;
+        for (final digit in digits) {
+          if (group.routes.contains(digit % 3)) {
+            hitCount++;
+          }
+        }
+        if (!group.counts.contains(hitCount)) {
+          return false;
+        }
+      }
     }
 
     if (_parityPatterns.isNotEmpty) {
@@ -704,26 +775,6 @@ class CalculationPanelState extends State<CalculationPanel> {
       default:
         return _ParityPattern.odd3;
     }
-  }
-
-  _RouteRequirement _routeCountsFor(List<int> digits) {
-    var route0 = 0;
-    var route1 = 0;
-    var route2 = 0;
-    for (final digit in digits) {
-      switch (digit % 3) {
-        case 0:
-          route0++;
-          break;
-        case 1:
-          route1++;
-          break;
-        case 2:
-          route2++;
-          break;
-      }
-    }
-    return _RouteRequirement(route0: route0, route1: route1, route2: route2);
   }
 
   int _spanDiffFor(List<int> digits) {
@@ -809,6 +860,25 @@ class CalculationPanelState extends State<CalculationPanel> {
     );
   }
 
+  Widget _staticChip(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: kSelectionFillColor,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: kSelectionColor.withOpacity(0.4)),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: kSelectionColor,
+        ),
+      ),
+    );
+  }
+
   Widget _section({
     required String title,
     String? subtitle,
@@ -866,7 +936,14 @@ class CalculationPanelState extends State<CalculationPanel> {
       _Option(_ConsecutivePattern.two, '2'),
       _Option(_ConsecutivePattern.three, '3'),
     ];
-    final selectedDigits = _digitCountSelections.keys.toList()..sort();
+    final canAddDanGroup = _draftDanDigits.isNotEmpty &&
+        _draftDanCounts.isNotEmpty &&
+        _danGroups.length < _maxDanGroups;
+    final canRemoveDanGroup = _danGroups.isNotEmpty;
+    final canAddRouteGroup = _draftRouteRemainders.isNotEmpty &&
+        _draftRouteCounts.isNotEmpty &&
+        _routeGroups.length < _maxRouteGroups;
+    final canRemoveRouteGroup = _routeGroups.isNotEmpty;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -940,7 +1017,7 @@ class CalculationPanelState extends State<CalculationPanel> {
         ),
         const SizedBox(height: 12),
         _section(
-          title: '必选',
+          title: '胆码组',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -948,26 +1025,75 @@ class CalculationPanelState extends State<CalculationPanel> {
                 List.generate(
                   10,
                   (index) => _toggleChip(
-                    selected: _digitCountSelections.containsKey(index),
+                    selected: _draftDanDigits.contains(index),
                     label: index.toString(),
-                    onTap: () => _toggleDigit(index),
+                    onTap: () => _toggleDanDigit(index),
                   ),
                 ),
               ),
-              if (selectedDigits.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                _scrollRow(
-                  selectedDigits
-                      .map(
-                        (digit) => _toggleChip(
-                          selected: true,
-                          label: _digitCountLabel(
-                            digit,
-                            _digitCountSelections[digit] ?? const <int>{},
-                          ),
-                          onTap: () => _editDigitCounts(digit),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    flex: 2,
+                    child: _scrollRow(
+                      List.generate(
+                        3,
+                        (index) => _toggleChip(
+                          selected: _draftDanCounts.contains(index + 1),
+                          label: '${index + 1}',
+                          onTap: () => _toggleDanCount(index + 1),
                         ),
-                      )
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    flex: 3,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: canAddDanGroup ? _addDanGroup : null,
+                            style: ElevatedButton.styleFrom(
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 10),
+                              textStyle: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            child: const Text('添加一组'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed:
+                                canRemoveDanGroup ? _removeLastDanGroup : null,
+                            style: OutlinedButton.styleFrom(
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 10),
+                              textStyle: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            child: const Text('删除最近一组'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              if (_danGroups.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _danGroups
+                      .map((group) => _staticChip(_danGroupLabel(group)))
                       .toList(),
                 ),
               ],
@@ -1020,15 +1146,88 @@ class CalculationPanelState extends State<CalculationPanel> {
         divider,
         _section(
           title: '012路',
-          child: _scrollRow(
-            List.generate(
-              3,
-              (index) => _toggleChip(
-                selected: _routeFilters[index].isNotEmpty,
-                label: '$index路:${_countsLabel(_routeFilters[index])}',
-                onTap: () => _editRouteCounts(index),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _scrollRow(
+                List.generate(
+                  3,
+                  (index) => _toggleChip(
+                    selected: _draftRouteRemainders.contains(index),
+                    label: '${index}路',
+                    onTap: () => _toggleRouteRemainder(index),
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    flex: 2,
+                    child: _scrollRow(
+                      List.generate(
+                        3,
+                        (index) => _toggleChip(
+                          selected: _draftRouteCounts.contains(index + 1),
+                          label: '${index + 1}',
+                          onTap: () => _toggleRouteCount(index + 1),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    flex: 3,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed:
+                                canAddRouteGroup ? _addRouteGroup : null,
+                            style: ElevatedButton.styleFrom(
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 10),
+                              textStyle: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            child: const Text('添加一组'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: canRemoveRouteGroup
+                                ? _removeLastRouteGroup
+                                : null,
+                            style: OutlinedButton.styleFrom(
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 10),
+                              textStyle: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            child: const Text('删除最近一组'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              if (_routeGroups.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _routeGroups
+                      .map((group) => _staticChip(_routeGroupLabel(group)))
+                      .toList(),
+                ),
+              ],
+            ],
           ),
         ),
         divider,
