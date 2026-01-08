@@ -201,7 +201,8 @@ class GameConfigPanel extends StatelessWidget {
         const gap = 4.0;
         final halfGap = gap / 2;
         final maxWidth = constraints.maxWidth;
-        const columnCount = 3;
+        const labels = ['百十', '十个', '个百'];
+        final columnCount = labels.length;
         final availableWidth = maxWidth - gap * columnCount;
         final cellSize = min<double>(
           36.0,
@@ -210,15 +211,43 @@ class GameConfigPanel extends StatelessWidget {
         if (cellSize <= 0) {
           return const SizedBox.shrink();
         }
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(
-            columnCount,
-            (index) => Padding(
-              padding: EdgeInsets.symmetric(horizontal: halfGap),
-              child: _distanceFilterCell(index, cellSize),
+        final labelStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.w600,
+              fontSize: 10,
+              color: Colors.black54,
+            );
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(
+                columnCount,
+                (index) => Padding(
+                  padding: EdgeInsets.symmetric(horizontal: halfGap),
+                  child: SizedBox(
+                    width: cellSize,
+                    child: Text(
+                      labels[index],
+                      textAlign: TextAlign.center,
+                      style: labelStyle,
+                    ),
+                  ),
+                ),
+              ),
             ),
-          ),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(
+                columnCount,
+                (index) => Padding(
+                  padding: EdgeInsets.symmetric(horizontal: halfGap),
+                  child: _distanceFilterCell(index, cellSize),
+                ),
+              ),
+            ),
+          ],
         );
       },
     );

@@ -617,7 +617,7 @@ class CalculationPanelState extends State<CalculationPanel> {
       case DistanceFilter.red:
         return diff <= 3;
       case DistanceFilter.blue:
-        return diff > 3;
+        return diff >= 2;
     }
   }
 
